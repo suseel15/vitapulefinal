@@ -2006,7 +2006,7 @@ ml-training = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastapi", specifier = ">=0.115,<1.0" },
+    { name = "fastapi", specifier = ">=0.142.2,<1.0" },
     { name = "httpx", specifier = ">=0.27,<1.0" },
     { name = "ocrmypdf", git = "https://github.com/ocrmypdf/OCRmyPDF.git?rev=10b37915410d63b82a808b15add3ca7288e106f7" },
     { name = "pydantic-settings", specifier = ">=2.7,<3.0" },

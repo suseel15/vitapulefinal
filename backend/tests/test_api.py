@@ -1,6 +1,7 @@
 import asyncio
+from pathlib import Path
 from typing import cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -28,22 +29,25 @@ def test_versioned_health_endpoint() -> None:
     assert response.json()["data"]["status"] == "ok"
 
 
-def test_web_app_assets_are_served_without_changing_api_not_found_responses(tmp_path, monkeypatch) -> None:
+def test_web_app_assets_are_served_without_changing_api_not_found_responses() -> None:
     from app import main
-    from fastapi.staticfiles import StaticFiles
 
-    (tmp_path / "index.html").write_text("<!doctype html><title>VitaPulse</title>", encoding="utf-8")
-    (tmp_path / "styles.css").write_text("body { color: black; }", encoding="utf-8")
-    monkeypatch.setattr(main, "web_static_files", StaticFiles(directory=tmp_path, html=True))
+    public_dir = Path(main.__file__).resolve().parents[1] / "public"
+    created_public_dir = not public_dir.exists()
+    public_dir.mkdir(parents=True, exist_ok=True)
+    asset = public_dir / f"{uuid4().hex}.txt"
+    asset.write_text("VitaPulse static frontend asset", encoding="utf-8")
 
-    page = client.get("/")
-    stylesheet = client.get("/styles.css")
-    missing_api = client.get("/api/v1/not-a-route")
+    try:
+        response = client.get(f"/{asset.name}")
+        missing_api = client.get("/api/v1/not-a-route")
+    finally:
+        asset.unlink(missing_ok=True)
+        if created_public_dir:
+            public_dir.rmdir()
 
-    assert page.status_code == 200
-    assert "<title>VitaPulse</title>" in page.text
-    assert stylesheet.status_code == 200
-    assert stylesheet.text == "body { color: black; }"
+    assert response.status_code == 200
+    assert response.text == "VitaPulse static frontend asset"
     assert missing_api.status_code == 404
     assert missing_api.json()["error"]["code"] == "NOT_FOUND"
 

@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "VitaPulse protected API foundation"
 requires-python = ">=3.11"
 dependencies = [
-  "fastapi>=0.115,<1.0",
+  "fastapi>=0.142.2,<1.0",
   "httpx>=0.27,<1.0",
   "ocrmypdf @ git+https://github.com/ocrmypdf/OCRmyPDF.git@10b37915410d63b82a808b15add3ca7288e106f7",
   "pypdf>=5.1,<7.0",
@@ -32,6 +32,9 @@ exclude = ["datasets*", "tests*"]
 
 [tool.vercel.scripts]
 build = "python build_frontend.py"
+
+[tool.vercel.fastapi.static]
+cdn = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

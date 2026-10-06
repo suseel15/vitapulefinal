@@ -47,7 +47,7 @@ The build copies the static app into `dist/`. The development server and build u
 
 ## Deploy the web app to Vercel
 
-The Vercel project uses the FastAPI preset with its Root Directory set to `backend`. A tracked `backend/public/robots.txt` ensures Vercel discovers the static output directory before the build hook copies the web client into it. Vercel serves those files through its static CDN and routes `/api/...` requests to the FastAPI application on the same origin. `npm run build` remains the local static-web build. Configure the following Vercel backend environment variables for Production, Preview, and Development as needed:
+The Vercel project uses the FastAPI preset with its Root Directory set to `backend`. The build hook copies the web client into `backend/public/`, and FastAPI's frontend integration serves it from Vercel's CDN at the same origin as `/api/...`. `npm run build` remains the local static-web build. Configure the following Vercel backend environment variables for Production, Preview, and Development as needed:
 
 - `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` — the Supabase project URL and publishable/anon key used by the web client. These are public browser values; never use a service-role key for `SUPABASE_PUBLISHABLE_KEY`.
 - The backend's remaining server settings, including `SUPABASE_SERVICE_ROLE_KEY`, must remain Vercel server-side environment variables only. The frontend build copies only the Supabase URL and publishable key into the public client configuration and uses the current site origin for its API base.
