@@ -49,11 +49,10 @@ The build copies the static app into `dist/`. The development server and build u
 
 Import this repository into Vercel and keep the project root at the repository root. `vercel.json` configures `npm run build` and the static `dist/` output. Configure these Vercel build environment variables for Production, Preview, and Development as needed:
 
-- `VITAPULSE_API_BASE_URL` — the HTTPS origin of the deployed VitaPulse API (not a local address).
-- `VITAPULSE_SUPABASE_URL` — the Supabase project URL.
-- `VITAPULSE_SUPABASE_PUBLISHABLE_KEY` — the Supabase publishable/anon key. Never use a service-role key.
+- `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` — the Supabase project URL and publishable/anon key. The build also accepts `VITAPULSE_SUPABASE_URL` and `VITAPULSE_SUPABASE_PUBLISHABLE_KEY`. Never use a service-role key.
+- `VITAPULSE_API_BASE_URL` — optional until the API is deployed; when set, this must be the HTTPS origin of the deployed VitaPulse API (not a local address). Without it, authenticated health, rehabilitation and wellbeing API features remain unavailable.
 
-The build writes these public values into `dist/config.js`; they are visible to every browser visitor. Vercel builds fail clearly if any are missing, if the URLs are not HTTPS, or if the publishable-key variable contains a service-role key. Do not put service-role or other server secrets in `config.js` or any `VITAPULSE_*` frontend variable. Set Supabase Auth's site and redirect URLs to the deployed Vercel origin, and allow that exact origin in the backend's `CORS_ORIGINS`.
+The build writes the public Supabase values and optional API origin into `dist/config.js`; they are visible to every browser visitor. Vercel builds fail clearly if the Supabase values are missing, if configured URLs are not HTTPS, or if the publishable-key variable contains a service-role key. Do not put service-role or other server secrets in `config.js` or any frontend build variable. Set Supabase Auth's site and redirect URLs to the deployed Vercel origin, and allow that exact origin in the backend's `CORS_ORIGINS`.
 
 The web Wellbeing hub supports authenticated self-reported check-ins, sleep records, calculated recovery context, history, trends, and summaries through the existing Health API. Local demo entries remain in memory only. Camera capture is deliberately not enabled on the website; native camera observation can be added in the Android Studio phase without changing the website's permission posture.
 

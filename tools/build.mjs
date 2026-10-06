@@ -6,25 +6,29 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const output = resolve(root, "dist");
 const publicConfig = {
   apiBaseUrl: process.env.VITAPULSE_API_BASE_URL?.trim() || "",
-  supabaseUrl: process.env.VITAPULSE_SUPABASE_URL?.trim() || "",
-  supabasePublishableKey: process.env.VITAPULSE_SUPABASE_PUBLISHABLE_KEY?.trim() || "",
+  supabaseUrl: process.env.VITAPULSE_SUPABASE_URL?.trim() || process.env.SUPABASE_URL?.trim() || "",
+  supabasePublishableKey: process.env.VITAPULSE_SUPABASE_PUBLISHABLE_KEY?.trim() ||
+    process.env.SUPABASE_PUBLISHABLE_KEY?.trim() || "",
 };
-const configuredValues = Object.values(publicConfig).filter(Boolean).length;
+const configuredSupabaseValues = [publicConfig.supabaseUrl, publicConfig.supabasePublishableKey].filter(Boolean).length;
 
-if (process.env.VERCEL === "1" && configuredValues !== Object.keys(publicConfig).length) {
+if (process.env.VERCEL === "1" && configuredSupabaseValues !== 2) {
   throw new Error(
-    "Vercel builds require VITAPULSE_API_BASE_URL, VITAPULSE_SUPABASE_URL, and VITAPULSE_SUPABASE_PUBLISHABLE_KEY.",
+    "Vercel builds require SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY (or their VITAPULSE_* equivalents).",
   );
 }
 
-if (configuredValues > 0 && configuredValues !== Object.keys(publicConfig).length) {
+if (configuredSupabaseValues === 1) {
   throw new Error(
-    "Set all three VITAPULSE public configuration variables together, or leave all unset for a local demo build.",
+    "Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY together, or leave both unset for a local demo build.",
   );
 }
 
-if (configuredValues) {
-  for (const [name, value] of Object.entries(publicConfig).filter(([name]) => name !== "supabasePublishableKey")) {
+if (configuredSupabaseValues === 2) {
+  for (const [name, value] of [
+    ["apiBaseUrl", publicConfig.apiBaseUrl],
+    ["supabaseUrl", publicConfig.supabaseUrl],
+  ].filter(([, value]) => value)) {
     let url;
     try {
       url = new URL(value);
@@ -56,7 +60,7 @@ for (const entry of ["index.html", "styles.css", "app.js", "src"]) {
   await cp(resolve(root, entry), resolve(output, entry), { recursive: true, force: true });
 }
 
-if (configuredValues) {
+if (configuredSupabaseValues === 2) {
   const generatedConfig = {
     apiBaseUrl: JSON.stringify(publicConfig.apiBaseUrl),
     supabaseUrl: JSON.stringify(publicConfig.supabaseUrl),
