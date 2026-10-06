@@ -26,6 +26,13 @@ ml-training = [
   "scikit-learn>=1.6,<2.0",
 ]
 
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["datasets*", "tests*"]
+
+[tool.vercel.scripts]
+build = "python build_frontend.py"
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

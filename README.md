@@ -47,12 +47,12 @@ The build copies the static app into `dist/`. The development server and build u
 
 ## Deploy the web app to Vercel
 
-Import this repository into Vercel and keep the project root at the repository root. `vercel.json` configures `npm run build` and the static `dist/` output. Configure these Vercel build environment variables for Production, Preview, and Development as needed:
+The Vercel project uses the FastAPI preset with its Root Directory set to `backend`. The Vercel build hook copies the web client into the generated repository-root `public/` directory, serves those files through Vercel's static CDN, and routes `/api/...` requests to the FastAPI application on the same origin. `npm run build` remains the local static-web build. Configure the following Vercel backend environment variables for Production, Preview, and Development as needed:
 
-- `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` — the Supabase project URL and publishable/anon key. The build also accepts `VITAPULSE_SUPABASE_URL` and `VITAPULSE_SUPABASE_PUBLISHABLE_KEY`. Never use a service-role key.
-- `VITAPULSE_API_BASE_URL` — optional until the API is deployed; when set, this must be the HTTPS origin of the deployed VitaPulse API (not a local address). Without it, authenticated health, rehabilitation and wellbeing API features remain unavailable.
+- `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` — the Supabase project URL and publishable/anon key used by the web client. These are public browser values; never use a service-role key for `SUPABASE_PUBLISHABLE_KEY`.
+- The backend's remaining server settings, including `SUPABASE_SERVICE_ROLE_KEY`, must remain Vercel server-side environment variables only. The frontend build copies only the Supabase URL and publishable key into the public client configuration and uses the current site origin for its API base.
 
-The build writes the public Supabase values and optional API origin into `dist/config.js`; they are visible to every browser visitor. Vercel builds fail clearly if the Supabase values are missing, if configured URLs are not HTTPS, or if the publishable-key variable contains a service-role key. Do not put service-role or other server secrets in `config.js` or any frontend build variable. Set Supabase Auth's site and redirect URLs to the deployed Vercel origin, and allow that exact origin in the backend's `CORS_ORIGINS`.
+The Vercel build fails clearly if the Supabase URL/key are missing or invalid, or if the publishable-key variable contains a service-role key. Never put service-role or other server secrets in frontend config. Set Supabase Auth's site and redirect URLs to the deployed Vercel origin. Same-origin browser API requests do not require cross-origin CORS configuration; add the exact Vercel origin to the backend's `CORS_ORIGINS` only for other web origins.
 
 The web Wellbeing hub supports authenticated self-reported check-ins, sleep records, calculated recovery context, history, trends, and summaries through the existing Health API. Local demo entries remain in memory only. Camera capture is deliberately not enabled on the website; native camera observation can be added in the Android Studio phase without changing the website's permission posture.
 
