@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+**/local.properties
+.gradle/
+**/.kotlin/
+**/build/
+.idea/
+.venv/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+*.log
+*.iml
+.DS_Store
+/node_modules/
+/dist/
