@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 
 BACKEND_ROOT = Path(__file__).resolve().parent
 REPOSITORY_ROOT = BACKEND_ROOT.parent
-PUBLIC_ROOT = REPOSITORY_ROOT / "public"
+PUBLIC_ROOT = BACKEND_ROOT / "public"
 
 
 def _https_origin(value: str, name: str) -> str:
