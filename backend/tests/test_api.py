@@ -28,6 +28,26 @@ def test_versioned_health_endpoint() -> None:
     assert response.json()["data"]["status"] == "ok"
 
 
+def test_web_app_assets_are_served_without_changing_api_not_found_responses(tmp_path, monkeypatch) -> None:
+    from app import main
+    from fastapi.staticfiles import StaticFiles
+
+    (tmp_path / "index.html").write_text("<!doctype html><title>VitaPulse</title>", encoding="utf-8")
+    (tmp_path / "styles.css").write_text("body { color: black; }", encoding="utf-8")
+    monkeypatch.setattr(main, "web_static_files", StaticFiles(directory=tmp_path, html=True))
+
+    page = client.get("/")
+    stylesheet = client.get("/styles.css")
+    missing_api = client.get("/api/v1/not-a-route")
+
+    assert page.status_code == 200
+    assert "<title>VitaPulse</title>" in page.text
+    assert stylesheet.status_code == 200
+    assert stylesheet.text == "body { color: black; }"
+    assert missing_api.status_code == 404
+    assert missing_api.json()["error"]["code"] == "NOT_FOUND"
+
+
 def test_protected_endpoint_requires_a_bearer_token() -> None:
     response = client.get("/api/v1/me")
 

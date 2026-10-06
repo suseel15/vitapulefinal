@@ -2,12 +2,14 @@ import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.v1.router import router as v1_router
@@ -50,6 +52,11 @@ app = FastAPI(
     version="0.1.0",
     debug=settings.debug and settings.app_env == "development",
     lifespan=lifespan,
+)
+web_static_files = StaticFiles(
+    directory=Path(__file__).resolve().parents[1] / "public",
+    html=True,
+    check_dir=False,
 )
 app.add_middleware(
     CORSMiddleware,
@@ -120,3 +127,10 @@ async def ready(request: Request):
     from app.api.v1.router import versioned_ready
 
     return await versioned_ready(request, settings)
+
+
+@app.api_route("/{file_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
+async def serve_web_app(file_path: str, request: Request):
+    if file_path == "api" or file_path.startswith("api/"):
+        raise StarletteHTTPException(status_code=404, detail="Not Found")
+    return await web_static_files.get_response(file_path, request.scope)
