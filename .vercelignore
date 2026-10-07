@@ -1,0 +1,7 @@
+.git/
+.venv/
+android/
+backend/.vercel/
+dist/
+node_modules/
+Sensor-Based Dataset for Knee Joint Mobility and R/
