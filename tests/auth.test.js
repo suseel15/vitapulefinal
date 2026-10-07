@@ -35,6 +35,23 @@ function jsonResponse(payload, status = 200) {
   });
 }
 
+test("default auth fetch retains the browser global receiver", async () => {
+  const originalFetch = globalThis.fetch;
+  let receiver;
+  globalThis.fetch = function (url) {
+    receiver = this;
+    return Promise.resolve(jsonResponse({ url }));
+  };
+
+  try {
+    const auth = new SupabaseAuth({ storage: createStorage(), redirectUrl: "" });
+    await auth.request("/auth/v1/signup");
+    assert.equal(receiver, globalThis);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("role validation accepts only the server-defined role names", () => {
   assert.equal(isAllowedRole("ATHLETE"), true);
   assert.equal(isAllowedRole("doctor"), true);

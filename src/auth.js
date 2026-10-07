@@ -23,7 +23,7 @@ export function isAllowedRole(role) {
 
 export class SupabaseAuth {
   constructor({
-    fetchImpl = fetch,
+    fetchImpl = globalThis.fetch.bind(globalThis),
     storage = sessionStorage,
     redirectUrl = globalThis.location?.origin ?? "",
   } = {}) {
