@@ -23,6 +23,7 @@ function getRecoveryToken(hash) {
 
 let recoveryToken = getRecoveryToken(location.hash);
 if (recoveryToken) history.replaceState({}, "", `${location.pathname}${location.search}`);
+const requestedAuthMode = new URLSearchParams(location.search).get("auth");
 
 const appRoot = document.querySelector("#app");
 const toastRoot = document.querySelector("#toast-region");
@@ -30,7 +31,7 @@ const preferenceStore = window.localStorage;
 const auth = new SupabaseAuth();
 const initialTheme = preferenceStore.getItem("vitapulse.theme") === "dark" ? "dark" : "light";
 const state = {
-  authMode: recoveryToken ? "reset" : "login",
+  authMode: recoveryToken ? "reset" : requestedAuthMode === "register" ? "register" : "login",
   accountType: "ATHLETE",
   approvalScreen: false,
   booting: true,

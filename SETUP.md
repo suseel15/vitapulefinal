@@ -204,6 +204,8 @@ VITAPULSE_ESP32_BASE_URL=http://192.168.4.1/
 
 Never put the Supabase service-role key or Wi-Fi password in Android configuration. The publishable key is client-visible and must be protected by Supabase RLS.
 
+For automated or one-off builds, the `VITAPULSE_SUPABASE_URL` and `VITAPULSE_SUPABASE_PUBLISHABLE_KEY` environment variables can provide the same client-safe values instead of `android/local.properties`. These values are embedded in the Android app and must never be service-role or other server credentials. The native sign-in dialog links to the web registration form for account creation.
+
 From `android/`, run tests and build a locally installable debug APK:
 
 ```powershell

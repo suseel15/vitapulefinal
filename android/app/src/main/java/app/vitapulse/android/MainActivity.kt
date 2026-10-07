@@ -1,6 +1,7 @@
 package app.vitapulse.android
 
 import android.Manifest
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -361,6 +362,16 @@ private fun VitaPulseRoot(deviceViewModel: MovementDeviceViewModel = viewModel()
                 deviceViewModel.signIn(email, password)
                 showSignIn = false
             },
+            onCreateAccount = {
+                val registrationUrl = Uri.parse(BuildConfig.WEB_APP_URL)
+                    .buildUpon()
+                    .appendQueryParameter("auth", "register")
+                    .build()
+                    .toString()
+                webView?.loadUrl(registrationUrl)
+                tab = "web"
+                showSignIn = false
+            },
         )
     }
     if (showDatasetLabelConfirmation) {
@@ -699,7 +710,11 @@ private fun SensorGraph(samples: List<MovementSample>) {
 }
 
 @Composable
-private fun SignInDialog(onDismiss: () -> Unit, onSignIn: (String, String) -> Unit) {
+private fun SignInDialog(
+    onDismiss: () -> Unit,
+    onSignIn: (String, String) -> Unit,
+    onCreateAccount: () -> Unit,
+) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     AlertDialog(
@@ -716,6 +731,7 @@ private fun SignInDialog(onDismiss: () -> Unit, onSignIn: (String, String) -> Un
                     singleLine = true,
                 )
                 Text("Credentials are sent to configured Supabase Auth; no password is stored by the app.")
+                TextButton(onClick = onCreateAccount) { Text("Create an account") }
             }
         },
         confirmButton = { Button(onClick = { onSignIn(email.trim(), password) }) { Text("Sign in") } },

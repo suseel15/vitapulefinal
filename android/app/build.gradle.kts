@@ -11,7 +11,11 @@ val localProperties = Properties()
 rootProject.file("local.properties").takeIf { it.isFile }?.inputStream()?.use { localProperties.load(it) }
 
 fun localConfiguration(name: String, defaultValue: String): String =
-    providers.gradleProperty(name).orElse(localProperties.getProperty(name, defaultValue)).get()
+    providers.gradleProperty(name)
+        .orElse(providers.provider { localProperties.getProperty(name) })
+        .orElse(providers.environmentVariable(name))
+        .orElse(defaultValue)
+        .get()
 
 android {
     namespace = "app.vitapulse.android"
