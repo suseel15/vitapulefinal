@@ -3,7 +3,6 @@ package app.vitapulse.android.feature.wellbeing.camera
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.util.Size
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
@@ -46,7 +45,6 @@ class CameraController(
                     }
                     val imageAnalysis = ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .setTargetResolution(Size(640, 480))
                         .build()
                     val faceAnalyzer = FaceDetectionAnalyzer(onObservation, onFailure)
                     preview = cameraPreview
