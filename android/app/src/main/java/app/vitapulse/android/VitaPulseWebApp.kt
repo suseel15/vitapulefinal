@@ -79,6 +79,7 @@ internal fun VitaPulseWebApp(
                 }
 
                 override fun onPageFinished(view: WebView, pageUrl: String?) {
+                    view.evaluateJavascript("document.body.classList.add('android-native-app')", null)
                     loading = false
                     onCanGoBackChange(view.canGoBack())
                 }

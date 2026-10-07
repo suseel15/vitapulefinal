@@ -414,6 +414,7 @@ html[data-theme="dark"] .health-notice-warning { border-color: #53452e; backgrou
 @keyframes toast-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 
 .bottom-nav { display: none; }
+.android-native-app .bottom-nav { display: none !important; }
 
 @media (min-width: 1500px) {
   .page-content { padding-right: 48px; padding-left: 48px; }
@@ -438,6 +439,7 @@ html[data-theme="dark"] .health-notice-warning { border-color: #53452e; backgrou
   .page-content { padding: 25px 22px 22px; }
   .offline-banner { top: 61px; padding-left: 22px; }
   body:has(.app-shell) { padding-bottom: calc(68px + env(safe-area-inset-bottom)); }
+  body.android-native-app:has(.app-shell) { padding-bottom: 0; }
   .bottom-nav { position: fixed; z-index: 10; inset: auto 0 0; display: flex; min-height: calc(65px + env(safe-area-inset-bottom)); align-items: stretch; justify-content: space-around; gap: 0; padding: 4px 3px env(safe-area-inset-bottom); border-top: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 97%, transparent); box-shadow: 0 -5px 20px rgba(28,43,64,.055); backdrop-filter: blur(15px); }
   .bottom-nav .nav-link { position: relative; flex: 1 1 0; flex-direction: column; justify-content: center; gap: 3px; min-width: 0; min-height: 0; padding: 3px 1px; border-radius: 8px; font-size: 9px; letter-spacing: -.2px; line-height: 1; white-space: nowrap; }
   .bottom-nav .nav-link .icon { width: 19px; height: 19px; }
