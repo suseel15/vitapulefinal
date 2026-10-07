@@ -376,6 +376,7 @@ fun ConnectFeatureScreen(
                 grantedPermissions = grantedPermissions,
                 permissionManager = permissionManager,
                 onHealthPermissions = { route = "health-permissions" },
+                onRequestAllHealthData = { startContextualPermissionRequest(allTypes) },
                 onOpenAppSettings = {
                     context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
                 },
@@ -848,6 +849,7 @@ private fun ConnectPermissionsScreen(
     grantedPermissions: Set<String>,
     permissionManager: HealthConnectPermissionManager?,
     onHealthPermissions: () -> Unit,
+    onRequestAllHealthData: () -> Unit,
     onOpenAppSettings: () -> Unit,
 ) {
     LazyColumn(modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -857,7 +859,15 @@ private fun ConnectPermissionsScreen(
         item { Text("Local-network movement access is used only for the ESP32 connection.") }
         item { Text("Camera access is handled by its wellbeing feature when requested.") }
         item { Text("Notification permission is requested only by notification features.") }
-        item { Button(onClick = onHealthPermissions) { Text("Health Connect permissions") } }
+        item {
+            Button(
+                onClick = onRequestAllHealthData,
+                enabled = availability == HealthConnectAvailability.AVAILABLE && permissionManager != null,
+            ) {
+                Text("Request all supported health data")
+            }
+        }
+        item { OutlinedButton(onClick = onHealthPermissions) { Text("Review health data permissions") } }
         item { OutlinedButton(onClick = onOpenAppSettings) { Text("Open Android app settings") } }
     }
 }

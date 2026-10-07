@@ -174,6 +174,7 @@ class MovementDeviceViewModel(application: Application) : AndroidViewModel(appli
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
+                app.networkManager.releaseRequest()
                 val sourceState = app.movementDataSource.connectionState.value
                 app.networkManager.markState(
                     when {

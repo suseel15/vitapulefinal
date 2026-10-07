@@ -23,6 +23,7 @@ Build and run focused Android tests with:
 ```
 
 The app requests local Wi-Fi access only after the athlete taps **Connect device**. Android's system network confirmation selects the ESP32 access point. The selected `Network` and its socket factory are used only for the device HTTP client; API and Supabase Auth requests use the normal Internet route. No raw sensor readings or Wi-Fi credentials are sent to the backend.
+The native destinations are available from the top app menu; the redundant bottom navigation bar is not used.
 
 ## Device and session behavior
 

@@ -25,12 +25,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.FitnessCenter
-import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.HealthAndSafety
-import androidx.compose.material.icons.filled.Assessment
-import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -41,8 +37,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -105,6 +100,8 @@ private fun VitaPulseRoot(deviceViewModel: MovementDeviceViewModel = viewModel()
     var showConnectDialog by remember { mutableStateOf(false) }
     var showDiagnostics by remember { mutableStateOf(false) }
     var showSignIn by remember { mutableStateOf(false) }
+    var navigationMenuExpanded by remember { mutableStateOf(false) }
+    var connectInitialRoute by remember { mutableStateOf("hub") }
     var password by remember { mutableStateOf("") }
     var showDatasetLabelConfirmation by remember { mutableStateOf(false) }
 
@@ -145,56 +142,59 @@ private fun VitaPulseRoot(deviceViewModel: MovementDeviceViewModel = viewModel()
 
     Scaffold(
         topBar = {
-            if (tab != "web") {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text("vitapulse", style = MaterialTheme.typography.titleLarge)
-                            Text("SPORTS HEALTH · ANDROID", style = MaterialTheme.typography.labelSmall)
+            TopAppBar(
+                title = {
+                    Column {
+                        Text("vitapulse", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            when (tab) {
+                                "health" -> "HEALTH"
+                                "reports" -> "REPORTS"
+                                "rehab", "device" -> "REHABILITATION"
+                                "wellbeing" -> "WELLBEING"
+                                "connect" -> "DEVICES & PERMISSIONS"
+                                else -> "SPORTS HEALTH"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                },
+                actions = {
+                    Box {
+                        IconButton(onClick = { navigationMenuExpanded = true }) {
+                            Icon(Icons.Default.Menu, contentDescription = "Open app navigation")
                         }
-                    },
-                )
-            }
-        },
-        bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = tab == "web",
-                    onClick = { tab = "web" },
-                    icon = { Icon(Icons.Default.Home, contentDescription = null) },
-                    label = { Text("Home") },
-                )
-                NavigationBarItem(
-                    selected = tab == "health",
-                    onClick = { tab = "health" },
-                    icon = { Icon(Icons.Default.HealthAndSafety, contentDescription = null) },
-                    label = { Text("Health") },
-                )
-                NavigationBarItem(
-                    selected = tab == "reports",
-                    onClick = { tab = "reports" },
-                    icon = { Icon(Icons.Default.Assessment, contentDescription = null) },
-                    label = { Text("Reports") },
-                )
-                NavigationBarItem(
-                    selected = tab == "rehab",
-                    onClick = { tab = "rehab" },
-                    icon = { Icon(Icons.Default.FitnessCenter, contentDescription = null) },
-                    label = { Text("Rehab") },
-                )
-                NavigationBarItem(
-                    selected = tab == "wellbeing",
-                    onClick = { tab = "wellbeing" },
-                    icon = { Icon(Icons.Default.Favorite, contentDescription = null) },
-                    label = { Text("Wellbeing") },
-                )
-                NavigationBarItem(
-                    selected = tab == "connect" || tab == "device",
-                    onClick = { tab = "connect" },
-                    icon = { Icon(Icons.Default.Sensors, contentDescription = null) },
-                    label = { Text("Connect") },
-                )
-            }
+                        DropdownMenu(
+                            expanded = navigationMenuExpanded,
+                            onDismissRequest = { navigationMenuExpanded = false },
+                        ) {
+                            listOf(
+                                "Home" to "web",
+                                "Health" to "health",
+                                "Reports" to "reports",
+                                "Rehabilitation" to "rehab",
+                                "Wellbeing" to "wellbeing",
+                                "Connect devices" to "connect",
+                                "Permissions" to "permissions",
+                            ).forEach { (label, destination) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = {
+                                        if (destination == "permissions") {
+                                            connectInitialRoute = "permissions"
+                                            tab = "connect"
+                                        } else {
+                                            if (destination == "connect") connectInitialRoute = "hub"
+                                            tab = destination
+                                        }
+                                        navigationMenuExpanded = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                },
+            )
         },
     ) { insets ->
         Box(Modifier.fillMaxSize().padding(insets)) {
@@ -229,6 +229,7 @@ private fun VitaPulseRoot(deviceViewModel: MovementDeviceViewModel = viewModel()
                     movementState = state.connectionState,
                     onOpenMovementDevice = { tab = "device" },
                     onTestMovementDevice = deviceViewModel::testConnection,
+                    initialRoute = connectInitialRoute,
                     modifier = Modifier.fillMaxSize(),
                 )
             } else if (tab == "device") {
@@ -346,11 +347,17 @@ private fun VitaPulseRoot(deviceViewModel: MovementDeviceViewModel = viewModel()
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         singleLine = true,
                     )
+                    if (password.isNotEmpty() && password.length !in 8..63) {
+                        Text(
+                            "A WPA2 ESP32 password must be 8–63 characters.",
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                     Text("The Wi-Fi password is used only for this Android network request and is not saved.")
                 }
             },
             confirmButton = {
-                Button(enabled = password.isNotBlank(), onClick = {
+                Button(enabled = password.length in 8..63, onClick = {
                     val required = deviceViewModel.permissionToRequest()
                     if (required != null) permissionLauncher.launch(required)
                     else {

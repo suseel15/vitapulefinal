@@ -58,11 +58,12 @@ class Esp32NetworkManager(context: Context) {
                 if (_network.value == network) {
                     _network.value = null
                     refreshInternetAvailability()
-                    _connectionState.value = MovementConnectionState.RECONNECTING
+                    _connectionState.value = MovementConnectionState.WIFI_CONNECTION_FAILED
                 }
             }
 
             override fun onUnavailable() {
+                _network.value = null
                 _connectionState.value = MovementConnectionState.WIFI_CONNECTION_FAILED
             }
 
