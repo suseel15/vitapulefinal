@@ -24,6 +24,7 @@ from app.schemas.rehab import (
     SessionSource,
     SessionStatus,
 )
+from app.services.doctor_service import CareLoopService
 
 router = APIRouter(prefix="/rehab", tags=["rehab"])
 
@@ -358,14 +359,23 @@ async def transition_session(
     context: Annotated[AthleteContext, Depends(athlete_context)],
 ) -> dict:
     current = await _owned_session(context, session_id)
+    completion_sync_retry = (
+        current["status"] == SessionStatus.COMPLETED.value
+        and body.status == SessionStatus.COMPLETED
+    )
     allowed = {
         "PLANNED": {"CALIBRATING", "ACTIVE", "CANCELLED"},
         "CALIBRATING": {"ACTIVE", "CANCELLED", "ERROR"},
         "ACTIVE": {"PAUSED", "COMPLETED", "CANCELLED", "ERROR"},
         "PAUSED": {"ACTIVE", "COMPLETED", "CANCELLED", "ERROR"},
     }
-    if body.status.value not in allowed.get(current["status"], set()):
+    if not completion_sync_retry and body.status.value not in allowed.get(current["status"], set()):
         raise HTTPException(status_code=409, detail=f"Cannot move a {current['status'].lower()} session to {body.status.value.lower()}.")
+    if completion_sync_retry:
+        await CareLoopService(_client(context)).rehab_completed(
+            context[0], context[0], current, getattr(request.state, "request_id", None)
+        )
+        return success(request, {"session": current})
     updates: dict[str, Any] = {"status": body.status.value, "updated_at": datetime.now(UTC).isoformat()}
     if body.status == SessionStatus.ACTIVE and not current.get("started_at"):
         updates["started_at"] = datetime.now(UTC).isoformat()
@@ -374,6 +384,10 @@ async def transition_session(
     session = await _repository(context).patch("rehab_sessions", session_id, updates)
     if session is None:
         raise _not_found("rehabilitation session")
+    if body.status == SessionStatus.COMPLETED:
+        await CareLoopService(_client(context)).rehab_completed(
+            context[0], context[0], session, getattr(request.state, "request_id", None)
+        )
     return success(request, {"session": session})
 
 
@@ -617,6 +631,10 @@ async def save_movement_summary(
                 payload={"baseline_comparison": baseline_status},
                 prefer="return=minimal",
             )
+    if not completed_summary_retry:
+        await CareLoopService(client).rehab_completed(
+            context[0], context[0], updated, getattr(request.state, "request_id", None)
+        )
     return success(request, {"session": updated})
 
 

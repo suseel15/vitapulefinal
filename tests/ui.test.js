@@ -21,10 +21,115 @@ test("athlete home uses honest empty states and five product destinations", () =
   }
 });
 
+test("connected health context shows fresh metrics, provenance and distinct record and sync times", () => {
+  const now = Date.now();
+  const recent = (offsetMs) => new Date(now + offsetMs).toISOString();
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const markup = renderApp({
+    session: { email: "athlete@example.test", name: "Jordan Davis", role: "ATHLETE" },
+    route: "home",
+    theme: "light",
+    offline: false,
+    healthApiConfigured: true,
+    connectContext: {
+      status: { status: "AUTHORIZED" },
+      sleepRecords: [{
+        duration_minutes: 420,
+        end_time: recent(-60 * 60 * 1000),
+        updated_at: recent(-30 * 60 * 1000),
+        source: "HEALTH_CONNECT",
+        source_application: "com.example.sleep",
+      }],
+      heartRateRecords: [{
+        average_bpm: 64,
+        end_time: recent(-5 * 60 * 1000),
+        updated_at: recent(-2 * 60 * 1000),
+        source: "HEALTH_CONNECT",
+        source_application: "<script>origin</script>",
+      }],
+      activityRecords: [{
+        count: 3500,
+        start_time: todayStart.toISOString(),
+        end_time: recent(-1000),
+        updated_at: recent(-5 * 60 * 1000),
+        source: "HEALTH_CONNECT",
+        source_application: "com.example.steps",
+      }, {
+        count: 1000,
+        start_time: todayStart.toISOString(),
+        end_time: recent(0),
+        updated_at: recent(-500),
+        source: "HEALTH_CONNECT",
+        source_application: "com.example.steps",
+      }, {
+        count: 9000,
+        start_time: todayStart.toISOString(),
+        end_time: recent(-30 * 1000),
+        updated_at: recent(-10 * 1000),
+        source: "HEALTH_CONNECT",
+        source_application: "com.other.steps",
+      }],
+    },
+  });
+
+  assert.match(markup, /Connected recovery snapshot/);
+  assert.match(markup, /7h 0m/);
+  assert.match(markup, /4,500/);
+  assert.match(markup, /64 bpm average/);
+  assert.match(markup, /Record/);
+  assert.match(markup, /Synced/);
+  assert.doesNotMatch(markup, /<script>origin<\/script>/);
+  assert.match(markup, /&lt;script&gt;origin&lt;\/script&gt;/);
+});
+
+test("stale wearable records are not shown as current home context", () => {
+  const now = Date.now();
+  const old = (days) => new Date(now - days * 24 * 60 * 60 * 1000).toISOString();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  yesterday.setHours(0, 0, 0, 0);
+  const markup = renderApp({
+    session: { email: "athlete@example.test", name: "Jordan Davis", role: "ATHLETE" },
+    route: "home",
+    theme: "light",
+    offline: false,
+    healthApiConfigured: true,
+    connectContext: {
+      status: { status: "AUTHORIZED" },
+      sleepRecords: [{
+        duration_minutes: 600,
+        end_time: old(3),
+        updated_at: old(3),
+        source: "HEALTH_CONNECT",
+        source_application: "com.example.sleep",
+      }],
+      heartRateRecords: [{
+        average_bpm: 150,
+        end_time: old(2),
+        updated_at: old(2),
+        source: "HEALTH_CONNECT",
+        source_application: "com.example.heart",
+      }],
+      activityRecords: [{
+        count: 12000,
+        start_time: yesterday.toISOString(),
+        end_time: old(1),
+        updated_at: old(1),
+        source: "HEALTH_CONNECT",
+        source_application: "com.example.steps",
+      }],
+    },
+  });
+
+  assert.match(markup, /No recent connected records are available/);
+  assert.doesNotMatch(markup, /12,000|150 bpm average|10h 0m/);
+});
+
 test("athlete feature shells expose the requested Phase 1 destinations", () => {
   const session = { email: "athlete@example.test", name: "Jordan", role: "ATHLETE" };
   const requiredItems = {
-    health: ["Medical reports", "Body map", "Biomarkers", "Health intelligence", "Nutrition", "Medication", "Anti-doping", "Skin screening", "Health reports"],
+    health: ["Medical reports", "Body map", "Biomarkers", "Health intelligence", "Nutrition", "Medication", "Anti-doping", "Skin screening", "Reports", "Health reports"],
     rehab: ["Today's rehab", "Exercises", "Movement analysis", "Progress", "Functional tests", "Readiness", "Return to sport", "Recovery", "Reports"],
     wellbeing: ["Self check-in", "30-second camera check", "Sleep", "Recovery", "History", "Trends", "Reports"],
     connect: ["Movement device", "Smartwatch", "Data sync", "Permissions", "Diagnostics"],
@@ -34,6 +139,63 @@ test("athlete feature shells expose the requested Phase 1 destinations", () => {
     const markup = renderApp({ session, route, theme: "light", offline: false });
     for (const label of labels) assert.ok(markup.includes(escapeHtml(label)), `${route} should include ${label}`);
   }
+});
+
+test("feature detail routes explain availability and link to a real destination", () => {
+  const markup = renderApp({
+    session: { email: "athlete@example.test", name: "Jordan", role: "ATHLETE" },
+    route: "detail",
+    detail: "Movement device",
+    lastModule: "connect",
+    theme: "light",
+    offline: false,
+  });
+
+  assert.match(markup, /Android device required/);
+  assert.match(markup, /native Android app/);
+  assert.match(markup, /data-route="connect"/);
+  assert.doesNotMatch(markup, /Nothing here yet|being prepared|Coming up/);
+});
+
+test("report workspace escapes report source data and exposes authenticated report actions", () => {
+  const markup = renderApp({
+    session: { email: "athlete@example.test", name: "Jordan", role: "ATHLETE" },
+    route: "reports",
+    theme: "light",
+    healthApiConfigured: true,
+    reporting: {
+      reports: [{
+        id: "report-id",
+        title: "Weekly report",
+        report_type: "WEEKLY_ATHLETE_REPORT",
+        status: "COMPLETED",
+        created_at: "2026-02-03T10:00:00Z",
+      }],
+      detail: {
+        title: "Weekly report",
+        generated_at: "2026-02-03T10:00:00Z",
+        factual_summary: "Found one record.",
+        data_completeness: "COMPLETE",
+        data_gaps: [],
+        limitations: [],
+        sections: [{
+          title: "Health",
+          category: "HEALTH",
+          values: [{ label: "Marker", value: "<script>unsafe</script>", source_ids: ["SOURCE-001"] }],
+        }],
+        sources: [{ source_id: "SOURCE-001", source_label: "Measurement", timestamp: "2026-02-03T10:00:00Z", provenance: "DIRECTLY_REPORTED" }],
+      },
+      selectedId: "report-id",
+      status: { status: "COMPLETED", aiStatus: "SKIPPED" },
+      loading: false,
+      busy: false,
+      error: "",
+    },
+  });
+
+  assert.match(markup, /data-report-action="download-pdf"/);
+  assert.match(markup, /&lt;script&gt;unsafe&lt;\/script&gt;/);
+  assert.doesNotMatch(markup, /<script>unsafe<\/script>/);
 });
 
 test("wellbeing hub exposes private check-in and sleep forms without browser camera capture", () => {

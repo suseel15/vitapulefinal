@@ -22,9 +22,14 @@ export function isAllowedRole(role) {
 }
 
 export class SupabaseAuth {
-  constructor({ fetchImpl = fetch, storage = sessionStorage } = {}) {
+  constructor({
+    fetchImpl = fetch,
+    storage = sessionStorage,
+    redirectUrl = globalThis.location?.origin ?? "",
+  } = {}) {
     this.fetchImpl = fetchImpl;
     this.storage = storage;
+    this.redirectUrl = redirectUrl;
   }
 
   get configured() {
@@ -97,7 +102,7 @@ export class SupabaseAuth {
       throw new AuthError("Choose an available account type.", 400, "INVALID_ROLE");
     }
 
-    const result = await this.request("/auth/v1/signup", {
+    const result = await this.request(this.authRedirectPath("/auth/v1/signup"), {
       method: "POST",
       body: {
         email: email.trim(),
@@ -164,10 +169,16 @@ export class SupabaseAuth {
   }
 
   async sendPasswordReset(email) {
-    await this.request("/auth/v1/recover", {
+    await this.request(this.authRedirectPath("/auth/v1/recover"), {
       method: "POST",
       body: { email: email.trim() },
     });
+  }
+
+  authRedirectPath(path) {
+    if (!this.redirectUrl) return path;
+    const separator = path.includes("?") ? "&" : "?";
+    return `${path}${separator}redirect_to=${encodeURIComponent(this.redirectUrl)}`;
   }
 
   async updatePassword(recoveryToken, password) {
@@ -286,6 +297,10 @@ export class SupabaseAuth {
   }
 
   async healthRequest(session, path, { method = "GET", body } = {}) {
+    return this.apiRequest(session, `/health${path}`, { method, body });
+  }
+
+  async apiRequest(session, path, { method = "GET", body } = {}) {
     if (session.demo) {
       throw new AuthError(
         "Health records are unavailable in demo mode. Sign in with a real athlete account and configure the Health API.",
@@ -303,7 +318,7 @@ export class SupabaseAuth {
     }
     let response;
     try {
-      response = await this.fetchImpl(`${baseUrl}/api/v1/health${path}`, {
+      response = await this.fetchImpl(`${baseUrl}/api/v1${path}`, {
         method,
         headers: {
           Authorization: `Bearer ${session.accessToken}`,

@@ -51,6 +51,7 @@ async def get_current_profile(
     if not profiles:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="An approved account profile is required.")
     profile = profiles[0]
+    profile["email"] = user.get("email")
     role = profile.get("role")
     if role not in {"ATHLETE", "DOCTOR", "ADMIN"}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account role is not authorized.")

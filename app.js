@@ -38,6 +38,15 @@ const state = {
   healthApiConfigured: healthApiIsConfigured,
   healthBusy: false,
   healthData: {},
+  connectContext: {
+    activityRecords: [],
+    error: "",
+    heartRateRecords: [],
+    lastLoadedAt: 0,
+    loading: false,
+    sleepRecords: [],
+    status: null,
+  },
   wellbeing: {
     overview: null,
     checkins: [],
@@ -46,6 +55,15 @@ const state = {
     history: [],
     trends: null,
     reports: [],
+    loading: false,
+    busy: false,
+    error: "",
+  },
+  reporting: {
+    reports: [],
+    detail: null,
+    selectedId: "",
+    status: {},
     loading: false,
     busy: false,
     error: "",
@@ -92,6 +110,7 @@ const healthRoutes = new Set([
 ]);
 const REHAB_STORAGE_KEY = "vitapulse.rehab.sessions.v1";
 const rehabTimer = { interval: null, testInterval: null, lastRenderAt: 0 };
+let reportPollTimer = null;
 
 function isRehabRoute(route) {
   return new Set([
@@ -130,6 +149,7 @@ function navigate(route, { replace = false } = {}) {
   const doctor = state.session?.role === "DOCTOR" || state.session?.role === "ADMIN";
   const validDoctorRoute = route.startsWith("doctor-");
   const validAthleteRoute = ["home", "wellbeing", "connect", "profile", "settings", "detail"].includes(route) ||
+    route === "reports" ||
     isRehabRoute(route) ||
     healthRoutes.has(route);
   if (!state.session || (doctor ? !validDoctorRoute && !["profile", "settings"].includes(route) : !validAthleteRoute)) {
@@ -144,11 +164,16 @@ function navigate(route, { replace = false } = {}) {
   if (replace) history.replaceState({ route }, "", url);
   else if (location.hash !== url) history.pushState({ route }, "", url);
   render();
+  if (route !== "reports") stopReportPolling();
   if (route === "profile" && state.session.role === "ATHLETE" && !state.athleteProfile) {
     void loadAthleteProfile();
   }
+  if (route === "home" || route === "wellbeing" || route === "rehab" || route === "rehab/recovery") {
+    void loadConnectContext();
+  }
   if (healthRoutes.has(route)) void loadHealthRoute(route);
   if (route === "wellbeing") void loadWellbeingRoute();
+  if (route === "reports") void loadReports();
   if (isRehabRoute(route)) void loadRehabRoute(route);
   if (!isRehabRoute(route)) {
     stopFunctionalTestTimer();
@@ -159,6 +184,58 @@ function navigate(route, { replace = false } = {}) {
     else stopRehabTimer();
   }
   window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+async function loadConnectContext() {
+  const context = state.connectContext;
+  const userId = state.session?.userId;
+  if (context.loading || (context.lastLoadedAt && Date.now() - context.lastLoadedAt < 60_000)) return;
+  if (state.session?.role !== "ATHLETE" || state.session?.demo || !state.healthApiConfigured) {
+    state.connectContext = { ...context, lastLoadedAt: Date.now() };
+    render();
+    return;
+  }
+  state.connectContext = { ...context, loading: true, error: "" };
+  render();
+  try {
+    const [status, sleep, heartRate, activity] = await Promise.all([
+      auth.apiRequest(state.session, "/connect/status"),
+      auth.apiRequest(state.session, "/health-data/sleep?limit=100"),
+      auth.apiRequest(state.session, "/health-data/heart-rate?limit=100"),
+      auth.apiRequest(state.session, "/health-data/activity?limit=100"),
+    ]);
+    if (state.session?.userId !== userId) return;
+    state.connectContext = {
+      activityRecords: activity?.activity_records || [],
+      error: "",
+      heartRateRecords: heartRate?.heart_rate_records || [],
+      lastLoadedAt: Date.now(),
+      loading: false,
+      sleepRecords: sleep?.sleep_records || [],
+      status: status?.health_connect || null,
+    };
+  } catch (error) {
+    if (state.session?.userId !== userId) return;
+    state.connectContext = {
+      ...state.connectContext,
+      error: friendlyError(error),
+      lastLoadedAt: Date.now(),
+      loading: false,
+    };
+  }
+  render();
+}
+
+function clearConnectContext() {
+  state.connectContext = {
+    activityRecords: [],
+    error: "",
+    heartRateRecords: [],
+    lastLoadedAt: 0,
+    loading: false,
+    sleepRecords: [],
+    status: null,
+  };
 }
 
 async function loadHealthRoute(route) {
@@ -208,6 +285,171 @@ async function loadHealthRoute(route) {
     state.healthError = friendlyError(error);
   } finally {
     state.healthLoading = false;
+    render();
+  }
+}
+
+async function loadReports({ silent = false } = {}) {
+  const reportState = state.reporting;
+  if (reportState.loading) return;
+  if (state.session?.demo || !state.healthApiConfigured) {
+    state.reporting = { ...reportState, loading: false };
+    if (!silent) render();
+    return;
+  }
+  const userId = state.session?.userId;
+  state.reporting = { ...reportState, loading: true, error: "" };
+  if (!silent) render();
+  try {
+    const response = await auth.apiRequest(state.session, "/reports");
+    if (state.session?.userId !== userId) return;
+    const reports = response?.reports || [];
+    state.reporting = { ...state.reporting, reports, loading: false, error: "" };
+    if (reports.some((item) => ["QUEUED", "COLLECTING_DATA", "VALIDATING_INPUT", "GENERATING_AI", "VALIDATING_AI", "BUILDING_REPORT", "RENDERING_HTML", "RENDERING_PDF", "UPLOADING"].includes(item.status))) {
+      startReportPolling();
+    } else {
+      stopReportPolling();
+    }
+  } catch (error) {
+    if (state.session?.userId !== userId) return;
+    state.reporting = { ...state.reporting, loading: false, error: friendlyError(error) };
+  }
+  if (!silent) render();
+}
+
+async function loadReportDetails(reportId) {
+  if (!reportId || state.reporting.busy) return;
+  const userId = state.session?.userId;
+  state.reporting = { ...state.reporting, loading: true, error: "" };
+  render();
+  try {
+    const [detail, status] = await Promise.all([
+      auth.apiRequest(state.session, `/reports/${encodeURIComponent(reportId)}`),
+      auth.apiRequest(state.session, `/reports/${encodeURIComponent(reportId)}/status`),
+    ]);
+    if (state.session?.userId !== userId) return;
+    state.reporting = {
+      ...state.reporting,
+      selectedId: reportId,
+      detail: detail?.report || null,
+      status: status || {},
+      loading: false,
+      error: "",
+    };
+    if (["QUEUED", "COLLECTING_DATA", "VALIDATING_INPUT", "GENERATING_AI", "VALIDATING_AI", "BUILDING_REPORT", "RENDERING_HTML", "RENDERING_PDF", "UPLOADING"].includes(status?.status)) {
+      startReportPolling();
+    }
+  } catch (error) {
+    if (state.session?.userId !== userId) return;
+    state.reporting = { ...state.reporting, loading: false, error: friendlyError(error) };
+  }
+  render();
+}
+
+function startReportPolling() {
+  if (reportPollTimer) return;
+  reportPollTimer = window.setInterval(() => {
+    if (state.route !== "reports") {
+      stopReportPolling();
+      return;
+    }
+    if (state.reporting.loading || state.reporting.busy) return;
+    void loadReports({ silent: true }).then(() => {
+      if (state.reporting.selectedId) void loadReportDetails(state.reporting.selectedId);
+    });
+  }, 5000);
+}
+
+function stopReportPolling() {
+  if (!reportPollTimer) return;
+  window.clearInterval(reportPollTimer);
+  reportPollTimer = null;
+}
+
+function clearReportState() {
+  stopReportPolling();
+  state.reporting = {
+    reports: [],
+    detail: null,
+    selectedId: "",
+    status: {},
+    loading: false,
+    busy: false,
+    error: "",
+  };
+}
+
+async function submitReportRequest(form) {
+  const data = new FormData(form);
+  const startDate = String(data.get("dateRangeStart") || "");
+  const endDate = String(data.get("dateRangeEnd") || "");
+  if (startDate && endDate && endDate < startDate) {
+    state.reporting = { ...state.reporting, error: "The end date must be on or after the start date." };
+    render();
+    return;
+  }
+  state.reporting = { ...state.reporting, busy: true, error: "" };
+  render();
+  try {
+    const dateRangeStart = startDate ? new Date(`${startDate}T00:00:00`).toISOString() : null;
+    const dateRangeEnd = endDate ? new Date(`${endDate}T23:59:59.999`).toISOString() : null;
+    const created = await auth.apiRequest(state.session, "/reports", {
+      method: "POST",
+      body: {
+        reportType: String(data.get("reportType")),
+        ...(dateRangeStart ? { dateRangeStart } : {}),
+        ...(dateRangeEnd ? { dateRangeEnd } : {}),
+        includeAi: data.has("includeAi"),
+        includePdf: data.has("includePdf"),
+        idempotencyKey: crypto.randomUUID(),
+      },
+    });
+    state.reporting = { ...state.reporting, selectedId: created.reportId, detail: null, busy: false };
+    showToast("Your report has been queued.");
+    await loadReports();
+    startReportPolling();
+  } catch (error) {
+    state.reporting = { ...state.reporting, busy: false, error: friendlyError(error) };
+    render();
+  }
+}
+
+async function performReportAction(action, reportId = state.reporting.selectedId) {
+  const reportState = state.reporting;
+  if (action === "back") {
+    state.reporting = { ...reportState, detail: null, selectedId: "", status: {}, error: "" };
+    render();
+  } else if (action === "refresh") {
+    await loadReports();
+  } else if (action === "view") {
+    await loadReportDetails(reportId);
+  } else if (action === "download-pdf" || action === "download-html") {
+    try {
+      const format = action.endsWith("pdf") ? "pdf" : "html";
+      const result = await auth.apiRequest(state.session, `/reports/${encodeURIComponent(reportId)}/download?format=${format}`);
+      window.location.assign(result.url);
+    } catch (error) {
+      state.reporting = { ...state.reporting, error: friendlyError(error) };
+      render();
+    }
+  }
+}
+
+async function submitReportEmail(form) {
+  const recipient = fieldValue(form, "recipient");
+  state.reporting = { ...state.reporting, busy: true, error: "" };
+  render();
+  try {
+    await auth.apiRequest(state.session, `/reports/${encodeURIComponent(state.reporting.selectedId)}/email`, {
+      method: "POST",
+      body: { recipient },
+    });
+    state.reporting = { ...state.reporting, busy: false };
+    showToast("Secure report link queued for email.");
+    await loadReports();
+    await loadReportDetails(state.reporting.selectedId);
+  } catch (error) {
+    state.reporting = { ...state.reporting, busy: false, error: friendlyError(error) };
     render();
   }
 }
@@ -1348,6 +1590,7 @@ function clearHealthState() {
   state.rehabSession = null;
   state.functionalTestRun = null;
   state.rehabError = "";
+  clearReportState();
 }
 
 function setAuthMode(mode) {
@@ -1388,6 +1631,7 @@ async function submitLogin(form) {
   try {
     state.session = await auth.signIn(email, password);
     clearHealthState();
+    clearConnectContext();
     state.route = state.session.role === "DOCTOR" || state.session.role === "ADMIN"
       ? "doctor-dashboard"
       : "home";
@@ -1466,6 +1710,7 @@ async function submitRegistration(form) {
     if (result.session) {
       state.session = result.session;
       clearHealthState();
+      clearConnectContext();
       state.athleteProfile = state.session.role === "ATHLETE"
         ? {
           date_of_birth: dateOfBirth || null,
@@ -1623,6 +1868,7 @@ async function signOut() {
   } finally {
     state.session = null;
     clearHealthState();
+    clearConnectContext();
     state.approvalScreen = false;
     state.loading = false;
     state.authMode = "login";
@@ -1635,6 +1881,12 @@ appRoot.addEventListener("click", async (event) => {
   if (bodyRegionButton) {
     state.selectedBodyRegion = bodyRegionButton.dataset.bodyRegion;
     render();
+    return;
+  }
+
+  const reportActionButton = event.target.closest("[data-report-action]");
+  if (reportActionButton) {
+    await performReportAction(reportActionButton.dataset.reportAction, reportActionButton.dataset.reportId);
     return;
   }
 
@@ -1746,6 +1998,8 @@ appRoot.addEventListener("submit", async (event) => {
   else if (form.dataset.form === "forgot") await submitPasswordReset(form);
   else if (form.dataset.form === "reset") await submitNewPassword(form);
   else if (form.dataset.form === "profile") await submitProfile(form);
+  else if (form.dataset.form === "report-request") await submitReportRequest(form);
+  else if (form.dataset.form === "report-email") await submitReportEmail(form);
   else if (form.dataset.form.startsWith("health-")) await submitHealthForm(form);
   else if (form.dataset.form.startsWith("rehab-")) await submitRehabForm(form);
   else if (form.dataset.form.startsWith("wellbeing-")) await submitWellbeingForm(form);
@@ -1767,7 +2021,7 @@ window.addEventListener("popstate", () => {
   const doctor = state.session.role === "DOCTOR" || state.session.role === "ADMIN";
   const allowed = doctor
     ? ["doctor-dashboard", "doctor-athletes", "doctor-health", "doctor-rehab", "doctor-reports", "profile", "settings"].includes(route)
-    : ["home", ...healthRoutes, "wellbeing", "connect", "profile", "settings"].includes(route) || isRehabRoute(route);
+    : ["home", ...healthRoutes, "wellbeing", "connect", "profile", "settings", "reports"].includes(route) || isRehabRoute(route);
   navigate(allowed ? route : doctor ? "doctor-dashboard" : "home", { replace: true });
 });
 
@@ -1793,7 +2047,7 @@ async function bootstrap() {
       const requestedRoute = location.hash.slice(1);
       const allowed = doctor
         ? ["doctor-dashboard", "doctor-athletes", "doctor-health", "doctor-rehab", "doctor-reports", "profile", "settings"].includes(requestedRoute)
-        : ["home", ...healthRoutes, "wellbeing", "connect", "profile", "settings"].includes(requestedRoute) || isRehabRoute(requestedRoute);
+        : ["home", ...healthRoutes, "wellbeing", "connect", "profile", "settings", "reports"].includes(requestedRoute) || isRehabRoute(requestedRoute);
       state.route = allowed ? requestedRoute : doctor ? "doctor-dashboard" : "home";
       history.replaceState({ route: state.route }, "", `#${state.route}`);
     }
@@ -1809,6 +2063,10 @@ async function bootstrap() {
     state.booting = false;
     render();
     if (state.session && healthRoutes.has(state.route)) void loadHealthRoute(state.route);
+    if (state.session && state.route === "reports") void loadReports();
+    if (state.session && ["home", "wellbeing", "rehab", "rehab/recovery"].includes(state.route)) {
+      void loadConnectContext();
+    }
     if (state.session && isRehabRoute(state.route)) void loadRehabRoute(state.route);
     if (state.session && state.route === "wellbeing") void loadWellbeingRoute();
   }

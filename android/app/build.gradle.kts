@@ -32,7 +32,14 @@ android {
         buildConfigField(
             "String",
             "API_BASE_URL",
-            escapedBuildConfig(localConfiguration("VITAPULSE_API_BASE_URL", "")),
+            escapedBuildConfig(localConfiguration("VITAPULSE_API_BASE_URL", "https://vitapulse-eosin.vercel.app/api/v1/")),
+        )
+        buildConfigField(
+            "String",
+            "WEB_APP_URL",
+            escapedBuildConfig(
+                localConfiguration("VITAPULSE_WEB_APP_URL", "https://vitapulse-eosin.vercel.app/"),
+            ),
         )
         buildConfigField(
             "String",
@@ -90,6 +97,9 @@ dependencies {
     implementation("androidx.room:room-ktx:2.7.1")
     ksp("androidx.room:room-compiler:2.7.1")
     implementation("androidx.security:security-crypto:1.1.0")
+    implementation("androidx.health.connect:connect-client:1.1.0")
+    implementation("androidx.work:work-runtime-ktx:2.10.1")
+    implementation("com.google.guava:guava:33.4.8-android")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")

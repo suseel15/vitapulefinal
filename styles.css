@@ -243,6 +243,24 @@ html[data-theme="dark"] .health-notice-warning { border-color: #53452e; backgrou
 .health-record blockquote { padding-left: 10px; border-left: 2px solid var(--line); }
 .health-record-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 13px; margin-top: 10px; }
 .health-record-actions .secondary-button { min-height: 40px; }
+.report-section { padding: 17px; margin-bottom: 14px; }
+.report-request-form { display: grid; max-width: 720px; gap: 13px; }
+.report-date-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.report-option { display: flex; align-items: center; gap: 9px; color: var(--text-soft); font-size: 11px; line-height: 1.4; }
+.report-option input { width: 17px; height: 17px; accent-color: var(--primary); }
+.report-list { display: grid; gap: 10px; }
+.report-card { padding: 15px; }
+.report-detail { padding: 17px; margin: 12px 0; }
+.report-detail > p, .report-section > p { color: var(--text-soft); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.report-section h2, .report-section h3 { color: var(--text-strong); font-family: "Manrope", sans-serif; }
+.report-section h2 { font-size: 15px; }
+.report-section h3 { margin: 18px 0 8px; font-size: 12px; }
+.report-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 12px; }
+.report-value-list, .report-source-list { display: grid; gap: 8px; padding-left: 19px; color: var(--text-soft); font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; }
+.report-value-list small, .report-source-list small, .report-ai-item small { color: var(--text-faint); font-size: 10px; }
+.report-ai-item { padding: 10px 12px; margin: 9px 0; border-left: 2px solid var(--primary); border-radius: 0 7px 7px 0; background: var(--surface-soft); }
+.report-ai-item strong { color: var(--text-strong); font-size: 11px; }
+.report-ai-item p { margin: 5px 0; color: var(--text); font-size: 11px; line-height: 1.5; }
 .health-empty { display: grid; gap: 5px; padding: 20px 16px; border: 1px dashed var(--line); border-radius: 9px; color: var(--text-soft); text-align: center; }
 .health-empty strong { color: var(--text); font-size: 11px; }
 .health-empty p { margin: 0; font-size: 10px; line-height: 1.5; }
@@ -514,6 +532,7 @@ html[data-theme="dark"] .health-notice-warning { border-color: #53452e; backgrou
   .auth-main { padding-right: 16px; padding-left: 16px; }
   .demo-mode-banner { padding-right: 12px; padding-left: 12px; font-size: 10px; }
   .field-grid { grid-template-columns: 1fr; }
+  .report-date-grid { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }

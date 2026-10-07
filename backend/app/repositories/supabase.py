@@ -83,8 +83,47 @@ class SupabaseRepository:
                 detail="The health data service returned an invalid response.",
             ) from error
 
-    async def upload_object(self, bucket: str, object_path: str, content: bytes, mime_type: str) -> None:
-        headers = {**self.headers, "Content-Type": mime_type, "x-upsert": "false"}
+    async def rpc(self, function_name: str, payload: dict[str, Any]) -> Any:
+        if not function_name.replace("_", "").isalnum():
+            raise ValueError("RPC function name is invalid.")
+        headers = {**self.headers, "Accept": "application/json", "Content-Type": "application/json"}
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.post(
+                    f"{self.settings.supabase_url}/rest/v1/rpc/{quote(function_name, safe='')}",
+                    headers=headers,
+                    json=payload,
+                )
+        except httpx.HTTPError as error:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="The health data service is temporarily unavailable.",
+            ) from error
+        if not response.is_success:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="The requested account action could not be completed.",
+            )
+        if response.status_code == 204 or not response.content:
+            return None
+        try:
+            return response.json()
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="The health data service returned an invalid response.",
+            ) from error
+
+    async def upload_object(
+        self,
+        bucket: str,
+        object_path: str,
+        content: bytes,
+        mime_type: str,
+        *,
+        upsert: bool = False,
+    ) -> None:
+        headers = {**self.headers, "Content-Type": mime_type, "x-upsert": str(upsert).lower()}
         url = (
             f"{self.settings.supabase_url}/storage/v1/object/"
             f"{quote(bucket, safe='')}/{quote(object_path, safe='/')}"

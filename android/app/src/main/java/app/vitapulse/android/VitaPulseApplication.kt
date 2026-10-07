@@ -9,8 +9,17 @@ import app.vitapulse.android.core.device.HttpPollingMovementDataSource
 import app.vitapulse.android.core.device.MovementDatabase
 import app.vitapulse.android.core.device.MovementProcessor
 import app.vitapulse.android.core.device.MovementDatabase.Companion.MIGRATION_1_2
+import app.vitapulse.android.core.healthconnect.HealthConnectManager
+import app.vitapulse.android.core.healthconnect.HealthConnectPermissionManager
+import app.vitapulse.android.core.healthconnect.HealthConnectReader
+import app.vitapulse.android.core.healthconnect.HealthConnectSyncRepository
+import app.vitapulse.android.core.healthconnect.HealthConnectSyncWorker
+import app.vitapulse.android.core.healthconnect.HealthDataDatabase
+import app.vitapulse.android.core.healthconnect.HealthDataProvider
+import app.vitapulse.android.core.healthconnect.HealthDataType
 import app.vitapulse.android.feature.wellbeing.data.WellbeingDatabase
 import app.vitapulse.android.movement.inference.ModelManager
+import androidx.health.connect.client.HealthConnectClient
 
 class VitaPulseApplication : Application() {
     lateinit var networkManager: Esp32NetworkManager
@@ -20,6 +29,14 @@ class VitaPulseApplication : Application() {
     lateinit var movementDatabase: MovementDatabase
         private set
     lateinit var wellbeingDatabase: WellbeingDatabase
+        private set
+    lateinit var healthDataDatabase: HealthDataDatabase
+        private set
+    lateinit var healthConnectManager: HealthConnectManager
+        private set
+    var healthConnectClient: HealthConnectClient? = null
+        private set
+    var healthSyncRepository: HealthConnectSyncRepository? = null
         private set
     lateinit var backendClient: BackendClient
         private set
@@ -45,7 +62,24 @@ class VitaPulseApplication : Application() {
             WellbeingDatabase::class.java,
             "vitapulse-wellbeing.db",
         ).build()
+        healthDataDatabase = Room.databaseBuilder(
+            this,
+            HealthDataDatabase::class.java,
+            "vitapulse-health-data.db",
+        ).build()
+        healthConnectManager = HealthConnectManager(this)
+        healthConnectClient = healthConnectManager.clientOrNull()
+        healthConnectClient?.let { client ->
+            healthSyncRepository = HealthConnectSyncRepository(
+                healthDataDatabase,
+                HealthConnectPermissionManager(client),
+                HealthDataProvider { type, start, end -> HealthConnectReader(client).read(type, start, end) },
+            )
+        }
         backendClient = BackendClient(this)
+        if (backendClient.isHealthDataSyncEnabled()) {
+            HealthConnectSyncWorker.schedulePeriodic(this)
+        }
         modelManager = ModelManager(this)
     }
 }

@@ -97,6 +97,18 @@ def test_rehab_endpoints_require_an_authenticated_athlete() -> None:
         assert response.json()["success"] is False
 
 
+def test_reports_intelligence_endpoints_require_an_authenticated_athlete() -> None:
+    for path in (
+        "/api/v1/reports",
+        "/api/v1/reports/timeline",
+        "/api/v1/reports/intelligence",
+        "/api/v1/reports/review-items",
+    ):
+        response = client.get(path)
+        assert response.status_code == 401, path
+        assert response.json()["success"] is False
+
+
 def test_ready_reports_missing_identity_configuration_without_leaking_values(monkeypatch) -> None:
     from app import main
     from app.core.config import Settings

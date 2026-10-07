@@ -3,12 +3,12 @@ package app.vitapulse.android
 import android.Manifest
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +26,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.HealthAndSafety
+import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -70,6 +73,9 @@ import app.vitapulse.android.core.device.ExerciseRecord
 import app.vitapulse.android.core.device.MovementConnectionState
 import app.vitapulse.android.core.device.MovementSample
 import app.vitapulse.android.feature.device.MovementDeviceViewModel
+import app.vitapulse.android.feature.connect.ConnectFeatureScreen
+import app.vitapulse.android.feature.connect.ConnectedHealthContextCard
+import app.vitapulse.android.feature.reports.ReportsFeatureScreen
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -90,7 +96,9 @@ class MainActivity : ComponentActivity() {
 private fun VitaPulseRoot(deviceViewModel: MovementDeviceViewModel = viewModel()) {
     val state by deviceViewModel.state.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
-    var tab by remember { mutableStateOf("connect") }
+    var tab by remember { mutableStateOf("web") }
+    var webView by remember { mutableStateOf<android.webkit.WebView?>(null) }
+    var webCanGoBack by remember { mutableStateOf(false) }
     var showConnectDialog by remember { mutableStateOf(false) }
     var showDiagnostics by remember { mutableStateOf(false) }
     var showSignIn by remember { mutableStateOf(false) }
@@ -121,24 +129,45 @@ private fun VitaPulseRoot(deviceViewModel: MovementDeviceViewModel = viewModel()
         }
     }
 
+    BackHandler(enabled = tab == "web" && webCanGoBack) {
+        webView?.goBack()
+    }
+    BackHandler(enabled = tab == "device") {
+        tab = "connect"
+    }
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text("vitapulse", style = MaterialTheme.typography.titleLarge)
-                        Text("ATHLETE WELLBEING · PHASE 6", style = MaterialTheme.typography.labelSmall)
-                    }
-                },
-            )
+            if (tab != "web") {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text("vitapulse", style = MaterialTheme.typography.titleLarge)
+                            Text("ATHLETE WELLBEING · PHASE 9", style = MaterialTheme.typography.labelSmall)
+                        }
+                    },
+                )
+            }
         },
         bottomBar = {
             NavigationBar {
                 NavigationBarItem(
-                    selected = tab == "connect",
-                    onClick = { tab = "connect" },
-                    icon = { Icon(Icons.Default.Sensors, contentDescription = null) },
-                    label = { Text("Connect") },
+                    selected = tab == "web",
+                    onClick = { tab = "web" },
+                    icon = { Icon(Icons.Default.Home, contentDescription = null) },
+                    label = { Text("Home") },
+                )
+                NavigationBarItem(
+                    selected = tab == "health",
+                    onClick = { tab = "health" },
+                    icon = { Icon(Icons.Default.HealthAndSafety, contentDescription = null) },
+                    label = { Text("Health") },
+                )
+                NavigationBarItem(
+                    selected = tab == "reports",
+                    onClick = { tab = "reports" },
+                    icon = { Icon(Icons.Default.Assessment, contentDescription = null) },
+                    label = { Text("Reports") },
                 )
                 NavigationBarItem(
                     selected = tab == "rehab",
@@ -152,26 +181,63 @@ private fun VitaPulseRoot(deviceViewModel: MovementDeviceViewModel = viewModel()
                     icon = { Icon(Icons.Default.Favorite, contentDescription = null) },
                     label = { Text("Wellbeing") },
                 )
+                NavigationBarItem(
+                    selected = tab == "connect" || tab == "device",
+                    onClick = { tab = "connect" },
+                    icon = { Icon(Icons.Default.Sensors, contentDescription = null) },
+                    label = { Text("Connect") },
+                )
             }
         },
     ) { insets ->
-        if (tab == "wellbeing") {
-            app.vitapulse.android.feature.wellbeing.WellbeingFeatureScreen(
-                Modifier.fillMaxSize().padding(insets),
+        Box(Modifier.fillMaxSize().padding(insets)) {
+            VitaPulseWebApp(
+                url = BuildConfig.WEB_APP_URL,
+                visible = tab == "web",
+                modifier = Modifier.fillMaxSize(),
+                onWebViewCreated = { webView = it },
+                onCanGoBackChange = { webCanGoBack = it },
             )
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(insets).padding(horizontal = 18.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                item {
-                    if (state.error != null) {
-                        NoticeCard(state.error!!, isError = true)
-                    }
-                    state.notice?.let { NoticeCard(it, isError = false) }
-                }
-                if (tab == "connect") {
+            if (tab == "wellbeing") {
+                app.vitapulse.android.feature.wellbeing.WellbeingFeatureScreen(
+                    modifier = Modifier.fillMaxSize(),
+                    onOpenConnect = { tab = "connect" },
+                )
+            } else if (tab == "reports") {
+                ReportsFeatureScreen(
+                    signedIn = state.signedIn,
+                    onSignIn = { showSignIn = true },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else if (tab == "health") {
+                ConnectFeatureScreen(
+                    movementState = state.connectionState,
+                    onOpenMovementDevice = { tab = "device" },
+                    onTestMovementDevice = deviceViewModel::testConnection,
+                    initialRoute = "health-data",
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else if (tab == "connect") {
+                ConnectFeatureScreen(
+                    movementState = state.connectionState,
+                    onOpenMovementDevice = { tab = "device" },
+                    onTestMovementDevice = deviceViewModel::testConnection,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else if (tab == "device") {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
                     item {
+                        TextButton(onClick = { tab = "connect" }) {
+                            Icon(Icons.Default.Home, contentDescription = "Back")
+                            Text("Back to Connect")
+                        }
+                    }
+                    item {
+                        if (state.error != null) NoticeCard(state.error!!, isError = true)
+                        state.notice?.let { NoticeCard(it, isError = false) }
                         DeviceScreen(
                             state = state,
                             showDiagnostics = showDiagnostics,
@@ -183,54 +249,73 @@ private fun VitaPulseRoot(deviceViewModel: MovementDeviceViewModel = viewModel()
                             onSignIn = { showSignIn = true },
                         )
                     }
-                } else if (state.session?.status == "COMPLETED") {
-                    val completedSession = checkNotNull(state.session)
+                }
+            } else if (tab != "web") {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
                     item {
-                        Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text("Movement insights", style = MaterialTheme.typography.titleLarge)
-                                Text(completedSession.exerciseName, style = MaterialTheme.typography.titleMedium)
-                                Text("${completedSession.analysis.repetitionCount} repetitions completed")
-                                Text("Movement quality  ${completedSession.analysis.movementQuality}")
-                                Text("Stability  ${completedSession.analysis.stability} · smoothness  ${completedSession.analysis.smoothness}")
-                                Text("Consistency  ${completedSession.analysis.consistency}")
-                                Text("Movement-based fatigue signal  ${completedSession.analysis.fatigueSignal}")
-                                Text("Sensor quality  ${completedSession.analysis.sensorQuality}")
-                                MovementBaselineSummary(completedSession)
-                                if (completedSession.anomalies.isNotEmpty()) {
-                                    Text("A repeated unusual movement pattern was observed. Consider reviewing your form.")
-                                    Text("This is a movement signal, not a diagnosis.")
-                                } else {
-                                    Text("No repeated unusual movement pattern was confirmed in this session.")
-                                }
-                                RepByRepSummary(completedSession.repetitions.map { it.number to it.quality.name })
-                                if (BuildConfig.DEBUG && state.signedIn && completedSession.sampleCount >= 30) {
+                        ConnectedHealthContextCard(
+                            title = "Recovery context",
+                            onOpenConnect = { tab = "connect" },
+                        )
+                    }
+                    item {
+                        if (state.error != null) {
+                            NoticeCard(state.error!!, isError = true)
+                        }
+                        state.notice?.let { NoticeCard(it, isError = false) }
+                    }
+                    if (state.session?.status == "COMPLETED") {
+                        val completedSession = checkNotNull(state.session)
+                        item {
+                            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Text("Movement insights", style = MaterialTheme.typography.titleLarge)
+                                    Text(completedSession.exerciseName, style = MaterialTheme.typography.titleMedium)
+                                    Text("${completedSession.analysis.repetitionCount} repetitions completed")
+                                    Text("Movement quality  ${completedSession.analysis.movementQuality}")
+                                    Text("Stability  ${completedSession.analysis.stability} · smoothness  ${completedSession.analysis.smoothness}")
+                                    Text("Consistency  ${completedSession.analysis.consistency}")
+                                    Text("Movement-based fatigue signal  ${completedSession.analysis.fatigueSignal}")
+                                    Text("Sensor quality  ${completedSession.analysis.sensorQuality}")
+                                    MovementBaselineSummary(completedSession)
+                                    if (completedSession.anomalies.isNotEmpty()) {
+                                        Text("A repeated unusual movement pattern was observed. Consider reviewing your form.")
+                                        Text("This is a movement signal, not a diagnosis.")
+                                    } else {
+                                        Text("No repeated unusual movement pattern was confirmed in this session.")
+                                    }
+                                    RepByRepSummary(completedSession.repetitions.map { it.number to it.quality.name })
+                                    if (BuildConfig.DEBUG && state.signedIn && completedSession.sampleCount >= 30) {
+                                        Text(
+                                            "Developer data collection: export this live session as a manually labeled sample. " +
+                                                "The ZIP contains raw sensor data and is not uploaded.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                        OutlinedButton(onClick = { showDatasetLabelConfirmation = true }) {
+                                            Text("Export training sample")
+                                        }
+                                    }
                                     Text(
-                                        "Developer data collection: export this live session as a manually labeled sample. " +
-                                            "The ZIP contains raw sensor data and is not uploaded.",
+                                        "Movement intelligence is based on sensor-derived signals and is not a medical diagnosis.",
                                         style = MaterialTheme.typography.bodySmall,
                                     )
-                                    OutlinedButton(onClick = { showDatasetLabelConfirmation = true }) {
-                                        Text("Export training sample")
-                                    }
                                 }
-                                Text(
-                                    "Movement intelligence is based on sensor-derived signals and is not a medical diagnosis.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
                             }
                         }
-                    }
-                } else {
-                    item {
-                        RehabScreen(
-                            state = state,
-                            onLoadExercises = deviceViewModel::loadExercises,
-                            onStart = deviceViewModel::beginLiveSession,
-                            onPause = deviceViewModel::pauseSession,
-                            onResume = deviceViewModel::resumeSession,
-                            onEnd = deviceViewModel::endSession,
-                        )
+                    } else {
+                        item {
+                            RehabScreen(
+                                state = state,
+                                onLoadExercises = deviceViewModel::loadExercises,
+                                onStart = deviceViewModel::beginLiveSession,
+                                onPause = deviceViewModel::pauseSession,
+                                onResume = deviceViewModel::resumeSession,
+                                onEnd = deviceViewModel::endSession,
+                            )
+                        }
                     }
                 }
             }

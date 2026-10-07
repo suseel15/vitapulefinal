@@ -1,6 +1,8 @@
 from typing import Any
 from uuid import UUID
 
+from fastapi import HTTPException, status
+
 from app.repositories.supabase import SupabaseRepository
 
 
@@ -57,6 +59,29 @@ class HealthRepository:
             prefer="resolution=merge-duplicates,return=representation",
         )
         return rows[0]
+
+    async def upsert_many(
+        self,
+        table: str,
+        values: list[dict[str, Any]],
+        *,
+        conflict: str,
+    ) -> list[dict[str, Any]]:
+        if not values:
+            return []
+        rows = await self.client.rest(
+            "POST",
+            table,
+            params={"on_conflict": conflict},
+            payload=[{**row, "athlete_id": self.athlete_id} for row in values],
+            prefer="resolution=merge-duplicates,return=representation",
+        )
+        if not isinstance(rows, list) or len(rows) != len(values):
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="The health data service returned an incomplete batch response.",
+            )
+        return rows
 
     async def patch(self, table: str, row_id: UUID, values: dict[str, Any]) -> dict[str, Any] | None:
         rows = await self.client.rest(

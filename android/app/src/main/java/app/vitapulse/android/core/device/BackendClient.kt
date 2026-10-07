@@ -71,6 +71,43 @@ class BackendClient(context: Context) {
         return profile.displayName?.takeIf { it.isNotBlank() } ?: "Athlete"
     }
 
+    suspend fun listReports(): List<ReportListItem> {
+        val (api, bearer) = authenticatedBackend()
+        val response = api.reports(bearer)
+        check(response.success) { response.error?.message ?: "Reports could not be loaded." }
+        return requireNotNull(response.data?.reports) { "The backend returned no report list." }
+    }
+
+    suspend fun createReport(reportType: String): ReportCreated {
+        val (api, bearer) = authenticatedBackend()
+        val response = api.createReport(
+            bearer,
+            mapOf("reportType" to reportType, "includeAi" to true, "includePdf" to true),
+        )
+        check(response.success) { response.error?.message ?: "The report could not be requested." }
+        return requireNotNull(response.data) { "The backend returned no report status." }
+    }
+
+    suspend fun report(reportId: String): ReportDetails {
+        val (api, bearer) = authenticatedBackend()
+        val response = api.report(bearer, reportId)
+        check(response.success) { response.error?.message ?: "The report could not be loaded." }
+        return requireNotNull(response.data?.report) { "The backend returned no report details." }
+    }
+
+    suspend fun reportDownloadUrl(reportId: String): String {
+        val (api, bearer) = authenticatedBackend()
+        val response = api.downloadReport(bearer, reportId)
+        check(response.success) { response.error?.message ?: "A secure report link could not be created." }
+        return requireNotNull(response.data?.url) { "The backend returned no secure report link." }
+    }
+
+    suspend fun emailReport(reportId: String, recipient: String) {
+        val (api, bearer) = authenticatedBackend()
+        val response = api.emailReport(bearer, reportId, mapOf("recipient" to recipient))
+        check(response.success) { response.error?.message ?: "The report email could not be queued." }
+    }
+
     suspend fun accessToken(): String? {
         val token = preferences.getString("access_token", null) ?: return null
         val expiresAt = preferences.getLong("expires_at_ms", 0)
@@ -90,6 +127,67 @@ class BackendClient(context: Context) {
     }
 
     fun currentAthleteId(): String? = preferences.getString("athlete_id", null)
+
+    fun isHealthDataSyncEnabled(): Boolean =
+        preferences.getBoolean(HEALTH_DATA_SYNC_ENABLED, false)
+
+    fun setHealthDataSyncEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean(HEALTH_DATA_SYNC_ENABLED, enabled) }
+    }
+
+    suspend fun uploadHealthConnectSync(request: Map<String, Any>): Boolean {
+        if (!isHealthDataSyncEnabled()) return false
+        val api = requireNotNull(backendApi) { "Backend API is not configured." }
+        val token = accessToken() ?: return false
+        val response = api.syncHealthConnect("Bearer $token", request)
+        check(response.success) { response.error?.message ?: "Health Connect summaries could not be uploaded." }
+        return true
+    }
+
+    suspend fun saveHealthConnectPermission(dataType: String, state: String, checkedAt: String) {
+        if (!isHealthDataSyncEnabled()) return
+        val (api, bearer) = authenticatedBackend()
+        val response = api.saveHealthConnectPermission(
+            bearer,
+            mapOf("data_type" to dataType, "permission_state" to state, "checked_at" to checkedAt),
+        )
+        check(response.success) {
+            response.error?.message ?: "Health Connect permission status could not be synchronized."
+        }
+    }
+
+    suspend fun saveConnectedDevice(
+        deviceType: String,
+        brand: String,
+        model: String,
+        identifier: String,
+        connectionType: String,
+        status: String,
+    ) {
+        val (api, bearer) = authenticatedBackend()
+        val response = api.saveConnectedDevice(
+            bearer,
+            mapOf(
+                "device_type" to deviceType,
+                "brand" to brand,
+                "model" to model,
+                "identifier" to identifier,
+                "connection_type" to connectionType,
+                "status" to status,
+            ),
+        )
+        check(response.success) {
+            response.error?.message ?: "Movement device status could not be synchronized."
+        }
+    }
+
+    suspend fun deleteHealthConnectAccountData() {
+        val (api, bearer) = authenticatedBackend()
+        val response = api.deleteHealthConnectData(bearer)
+        check(response.success) {
+            response.error?.message ?: "Account Health Connect data could not be deleted."
+        }
+    }
 
     fun datasetPseudonymousAthleteId(): String {
         val athleteId = requireNotNull(currentAthleteId()) { "Sign in before exporting a training sample." }
@@ -259,5 +357,6 @@ class BackendClient(context: Context) {
 
     companion object {
         private const val TOKEN_REFRESH_MARGIN_MS = 60_000L
+        private const val HEALTH_DATA_SYNC_ENABLED = "health_data_sync_enabled"
     }
 }

@@ -138,11 +138,33 @@ test("health requests refuse demo accounts and use the authenticated backend env
   assert.equal(request.options.headers.Authorization, "Bearer athlete-access-token");
 });
 
-test("athlete registration sends optional profile details as user metadata", async () => {
-  let signupBody;
+test("connect API requests use the versioned backend path and bearer session", async () => {
+  let request;
   const auth = new SupabaseAuth({
     storage: createStorage(),
-    fetchImpl: async (_url, options) => {
+    fetchImpl: async (url, options) => {
+      request = { url, options };
+      return jsonResponse({ success: true, data: { health_connect: { status: "AUTHORIZED" } } });
+    },
+  });
+  const data = await auth.apiRequest(
+    { demo: false, accessToken: "athlete-access-token" },
+    "/connect/status",
+  );
+
+  assert.deepEqual(data, { health_connect: { status: "AUTHORIZED" } });
+  assert.equal(request.url, "http://127.0.0.1:8000/api/v1/connect/status");
+  assert.equal(request.options.headers.Authorization, "Bearer athlete-access-token");
+});
+
+test("athlete registration sends optional profile details as user metadata", async () => {
+  let signupBody;
+  let signupUrl;
+  const auth = new SupabaseAuth({
+    storage: createStorage(),
+    redirectUrl: "https://vitapulse-eosin.vercel.app",
+    fetchImpl: async (url, options) => {
+      signupUrl = String(url);
       signupBody = JSON.parse(options.body);
       return jsonResponse({ user: { id: "athlete-1", email: "athlete@example.test" } });
     },
@@ -163,6 +185,7 @@ test("athlete registration sends optional profile details as user metadata", asy
   });
 
   assert.equal(result.needsEmailConfirmation, true);
+  assert.equal(new URL(signupUrl).searchParams.get("redirect_to"), "https://vitapulse-eosin.vercel.app");
   assert.deepEqual(
     Object.fromEntries(Object.entries(signupBody.data).filter(([key]) => key !== "full_name" && key !== "requested_account_type")),
     {
@@ -176,6 +199,22 @@ test("athlete registration sends optional profile details as user metadata", asy
       rehabilitation_goal: "Return to running",
     },
   );
+});
+
+test("password recovery redirects back to the configured VitaPulse origin", async () => {
+  let recoveryUrl;
+  const auth = new SupabaseAuth({
+    storage: createStorage(),
+    redirectUrl: "https://vitapulse-eosin.vercel.app",
+    fetchImpl: async (url) => {
+      recoveryUrl = String(url);
+      return jsonResponse({});
+    },
+  });
+
+  await auth.sendPasswordReset("athlete@example.test");
+
+  assert.equal(new URL(recoveryUrl).searchParams.get("redirect_to"), "https://vitapulse-eosin.vercel.app");
 });
 
 test("sign in trusts the profile role and never persists the password", async () => {

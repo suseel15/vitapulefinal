@@ -69,6 +69,7 @@ const modules = {
       ["Medication", "Keep your medication list up to date.", "health-medication"],
       ["Anti-doping", "Review status and verified-source availability.", "health-anti-doping"],
       ["Skin screening", "Availability and limitations for skin screening.", "health-skin-screening"],
+      ["Reports", "Generate source-linked reports and securely download them.", "reports"],
       ["Health reports", "View report drafts linked to your health data.", "health-history"],
     ],
   },
@@ -135,7 +136,7 @@ function navLinks(current, role) {
     </a>`).join("");
 }
 
-function pageName(route) {
+function pageName(route, detail = "") {
   return ({
     home: "Home",
     health: "Health",
@@ -158,6 +159,7 @@ function pageName(route) {
     "health-anti-doping": "Anti-doping",
     "health-skin-screening": "Skin screening",
     "health-history": "Health reports",
+    reports: "Reports",
     "rehab/today": "Today's rehab",
     "rehab/program": "Rehab program",
     "rehab/exercises": "Exercise library",
@@ -170,7 +172,7 @@ function pageName(route) {
     "rehab/return-to-sport": "Return to sport",
     "rehab/history": "Rehab history",
     "rehab/reports": "Rehab reports",
-    detail: "Coming up",
+    detail: detail || "Feature details",
   })[route] ?? (route.startsWith("rehab/session/") ? "Rehab session"
     : route.startsWith("rehab/exercises/") ? "Exercise details"
       : route.startsWith("rehab/functional-tests/") ? "Functional test"
@@ -186,8 +188,14 @@ function emptyState(title, description, action = "") {
   </div>`;
 }
 
-function homePage(session) {
+function homePage(state) {
+  const session = state.session;
   const name = escapeHtml(session.name.split(/\s+/)[0] || "Athlete");
+  const context = currentHealthContext(state.connectContext || {});
+  const recoverySummary = [
+    context.sleep && `Sleep ${Math.floor(Number(context.sleep.duration_minutes) / 60)}h ${Number(context.sleep.duration_minutes) % 60}m`,
+    context.heartRate && `${Math.round(Number(context.heartRate.average_bpm))} bpm average`,
+  ].filter(Boolean).join(" · ");
   return `<section class="welcome-row">
     <div><p class="eyebrow">${new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(new Date()).toUpperCase()}</p>
       <h1>Good morning, ${name}<span class="wave" aria-hidden="true">✦</span></h1>
@@ -206,9 +214,10 @@ function homePage(session) {
       </div>
       <div class="readiness-stamp">${icon("heart")}<span>Listen to<br />your body</span></div>
     </article>
+    ${connectedHealthContextMarkup(state)}
     <div class="home-card-grid">
       <article class="home-card"><div class="home-card-top"><span class="small-icon rehab-tint">${icon("rehab")}</span><span class="soft-tag">REHAB</span></div><h3>Rehabilitation</h3><p>No program has been assigned yet. Your plan will appear here when it's ready.</p><a href="#rehab" data-route="rehab">Explore rehab ${icon("arrow")}</a></article>
-      <article class="home-card"><div class="home-card-top"><span class="small-icon recovery-tint">${icon("wellbeing")}</span><span class="soft-tag">RECOVERY</span></div><h3>Make space to recover</h3><p>Recovery data isn't connected yet. Your rest deserves attention too.</p><a href="#wellbeing" data-route="wellbeing">Explore wellbeing ${icon("arrow")}</a></article>
+      <article class="home-card"><div class="home-card-top"><span class="small-icon recovery-tint">${icon("wellbeing")}</span><span class="soft-tag">RECOVERY</span></div><h3>Make space to recover</h3><p>${escapeHtml(recoverySummary || "Recovery measurements appear here when connected and synced. Your rest deserves attention too.")}</p><a href="#wellbeing" data-route="wellbeing">Explore wellbeing ${icon("arrow")}</a></article>
       <article class="home-card"><div class="home-card-top"><span class="small-icon movement-tint">${icon("activity")}</span><span class="soft-tag">MOVEMENT</span></div><h3>Your movement story</h3><p>Connect a movement device when you're ready to start tracking.</p><a href="#connect" data-route="connect">Explore connections ${icon("arrow")}</a></article>
     </div>
   </section>
@@ -217,6 +226,7 @@ function homePage(session) {
       <button class="quick-action" data-route="health" type="button"><span class="small-icon health-tint">${icon("heart")}</span><span><strong>Keep health in context</strong><small>Your sports-health space</small></span>${icon("arrow")}</button>
       <button class="quick-action" data-route="rehab" type="button"><span class="small-icon rehab-tint">${icon("rehab")}</span><span><strong>Explore rehabilitation</strong><small>Your plan and progress</small></span>${icon("arrow")}</button>
       <button class="quick-action" data-route="connect" type="button"><span class="small-icon movement-tint">${icon("connect")}</span><span><strong>Connect a device</strong><small>Movement and wearable sources</small></span>${icon("arrow")}</button>
+      <button class="quick-action" data-route="reports" type="button"><span class="small-icon health-tint">${icon("activity")}</span><span><strong>Review your reports</strong><small>Generate source-linked summaries</small></span>${icon("arrow")}</button>
     </div>
   </section>`;
 }
@@ -226,7 +236,7 @@ function modulePage(route) {
   if (!page) return "";
   return `<section class="page-intro"><p class="eyebrow">${page.eyebrow}</p><h1>${page.title}</h1><p>${page.subtitle}</p></section>
     <div class="module-grid">${page.items.map(([title, description, detail]) => `
-      <button class="module-card" type="button" ${detail.startsWith("health-") ? `data-route="${escapeHtml(detail)}"` : `data-detail="${escapeHtml(detail)}"`} ${route === "connect" && title === "Movement device" ? 'aria-label="Movement device, ESP32 not connected"' : ""}>
+      <button class="module-card" type="button" ${detail.startsWith("health-") || detail === "reports" ? `data-route="${escapeHtml(detail)}"` : `data-detail="${escapeHtml(detail)}"`} ${route === "connect" && title === "Movement device" ? 'aria-label="Movement device, ESP32 not connected"' : ""}>
         <span class="module-icon">${icon(route === "connect" ? "connect" : route === "wellbeing" ? "wellbeing" : route === "rehab" ? "rehab" : "heart")}</span>
         <span class="module-copy"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(description)}</small></span>
         <span class="module-arrow">${icon("arrow")}</span>
@@ -249,6 +259,85 @@ function wellbeingDate(value) {
   return Number.isNaN(date.getTime())
     ? "Date unavailable"
     : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+function latestFreshRecord(records, freshnessMs) {
+  const now = Date.now();
+  return records
+    .filter((record) => {
+      const end = new Date(record.end_time).getTime();
+      return Number.isFinite(end) && end <= now && now - end <= freshnessMs;
+    })
+    .sort((left, right) => new Date(right.end_time) - new Date(left.end_time))[0] || null;
+}
+
+function currentHealthContext(context) {
+  const sleep = latestFreshRecord(context.sleepRecords || [], 48 * 60 * 60 * 1000);
+  const heartRate = latestFreshRecord(context.heartRateRecords || [], 24 * 60 * 60 * 1000);
+  const today = new Date().toLocaleDateString();
+  const currentDayRecords = (context.activityRecords || []).filter((record) => {
+    const start = new Date(record.start_time);
+    const end = new Date(record.end_time);
+    return Number.isFinite(start.getTime()) && Number.isFinite(end.getTime()) &&
+      start.toLocaleDateString() === today && end <= new Date();
+  });
+  const latestActivity = currentDayRecords
+    .slice()
+    .sort((left, right) => new Date(right.end_time) - new Date(left.end_time))[0] || null;
+  const activity = latestActivity
+    ? {
+      ...latestActivity,
+      count: currentDayRecords
+        .filter((record) => record.source_application === latestActivity.source_application)
+        .reduce((total, record) => total + Number(record.count || 0), 0),
+    }
+    : null;
+  return { activity, heartRate, sleep };
+}
+
+function connectedHealthContextMarkup(state, compact = false) {
+  const context = state.connectContext || {};
+  const metrics = currentHealthContext(context);
+  const status = context.status?.status || "UNKNOWN";
+  const rows = [
+    metrics.sleep && {
+      label: "Sleep",
+      value: `${Math.floor(Number(metrics.sleep.duration_minutes) / 60)}h ${Number(metrics.sleep.duration_minutes) % 60}m`,
+      record: metrics.sleep,
+    },
+    metrics.activity && {
+      label: "Steps today",
+      value: Number(metrics.activity.count).toLocaleString(),
+      record: metrics.activity,
+    },
+    metrics.heartRate && {
+      label: "Heart rate",
+      value: `${Math.round(Number(metrics.heartRate.average_bpm))} bpm average`,
+      record: metrics.heartRate,
+    },
+  ].filter(Boolean);
+  const title = compact ? "Connected health context" : "Connected recovery snapshot";
+  const content = context.loading
+    ? `<p class="health-loading" role="status">Loading your connected health records…</p>`
+    : context.error
+      ? `<p class="health-notice-error" role="alert">${escapeHtml(context.error)}</p>`
+      : rows.length
+        ? `<div class="health-summary-grid">${rows.map((item) => `
+          <article class="health-summary-card"><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong>
+            <small>Record ${escapeHtml(wellbeingDate(item.record.end_time))} · Synced ${escapeHtml(wellbeingDate(item.record.updated_at))}</small>
+            <small>Source: ${escapeHtml(item.record.source || "HEALTH_CONNECT")} · ${escapeHtml(item.record.source_application || "Origin unavailable")}</small>
+          </article>`).join("")}</div>`
+        : `<p>${state.session?.demo
+          ? "Demo mode does not include wearable records."
+          : state.healthApiConfigured
+            ? "No recent connected records are available. Connect a source and sync Health Connect to see your data."
+            : "Sign in with an athlete account and configure the VitaPulse API to load connected records."}</p>`;
+  return `<section class="panel health-panel connected-health-context">
+    <div class="health-section-title"><div><h2>${escapeHtml(title)}</h2><p>Health Connect status: ${escapeHtml(status.replaceAll("_", " ").toLowerCase())}</p></div>${icon("heart")}</div>
+    ${content}
+    ${!compact ? `<a class="text-button" href="#connect" data-route="connect">Manage connected sources ${icon("arrow")}</a>` : ""}
+    <p class="health-disclaimer">Measurements are shown with their source, record time and sync time. They are not a medical assessment or recovery score.</p>
+  </section>`;
 }
 
 function wellbeingTrendLabel(metric) {
@@ -348,6 +437,7 @@ function wellbeingPage(state) {
 
   return `<section class="page-intro"><p class="eyebrow">YOUR WELLBEING</p><h1>Wellbeing</h1><p>Check in with yourself, at your own pace. Nothing is inferred when you have not recorded it.</p></section>
     ${notice}${error}${loading}
+    ${connectedHealthContextMarkup(state, true)}
     <section class="health-summary-grid wellbeing-summary" aria-label="Latest recorded wellbeing">
       <article class="health-summary-card"><span>Latest check-in</span><strong>${escapeHtml(latestCheckin)}</strong><small>${checkin ? escapeHtml(wellbeingDate(checkin.created_at)) : "No self-report recorded"}</small></article>
       <article class="health-summary-card"><span>Latest sleep</span><strong>${escapeHtml(sleepLabel)}</strong><small>${sleep ? escapeHtml(sleep.source || "SELF_REPORTED") : "No sleep record"}</small></article>
@@ -698,7 +788,8 @@ function rehabPage(route, state) {
   if (route === "rehab/recovery") {
     return rehabScreenShell(route, "Recovery", "Recovery context alongside your assigned rehabilitation.", `
       <section class="rehab-summary-grid"><article class="health-summary-card"><span>Recent rehab load</span><strong>${data.recent_rehab_load === null || data.recent_rehab_load === undefined ? "Not available" : `${escapeHtml(data.recent_rehab_load)} sec`}</strong></article><article class="health-summary-card"><span>Recent sessions</span><strong>${Number(data.recent_session_count || 0)}</strong></article><article class="health-summary-card"><span>Movement fatigue signal</span><strong>${rehabTag(data.fatigue_signal)}</strong></article></section>
-      ${rehabPanel("Sleep and wearable context", `<p>Recovery data unavailable. Connect a supported device in Connect.</p><p>Sleep: ${rehabTag(data.sleep?.status || "NOT_CONNECTED")}</p><p>Soreness: ${data.soreness ? rehabTag(data.soreness) : "Not recorded"}</p>`)}
+      ${connectedHealthContextMarkup(state, true)}
+      ${rehabPanel("Recorded rehabilitation context", `<p>Sleep: ${rehabTag(data.sleep?.status || "NOT_CONNECTED")}</p><p>Soreness: ${data.soreness ? rehabTag(data.soreness) : "Not recorded"}</p>`)}
     `, state);
   }
   if (route.startsWith("rehab/functional-tests")) {
@@ -919,8 +1010,86 @@ function healthHistoryContent(state) {
     ${medicalReports.length ? `<div class="health-record-list">${medicalReports.filter((item) => item.processing_status === "COMPLETED").map((report) => `<article class="health-record"><div class="health-record-top"><strong>${escapeHtml(report.original_filename || "Medical report")}</strong><span>${escapeHtml(dateLabel(report.report_date || report.uploaded_at))}</span></div><button class="secondary-button" type="button" data-health-action="create-report-draft" data-report-id="${escapeHtml(report.id)}" ${state.healthBusy || state.session.demo || !state.healthApiConfigured ? "disabled" : ""}>Create analysis draft</button></article>`).join("")}</div>` : ""}</section>`;
 }
 
+const reportTypes = [
+  "MEDICAL_REPORT_ANALYSIS", "BIOMARKER_REPORT", "BODY_MAP_REPORT", "HEALTH_INTELLIGENCE_REPORT",
+  "REHAB_SESSION_REPORT", "MOVEMENT_ANALYSIS_REPORT", "EXERCISE_PROGRESS_REPORT", "FUNCTIONAL_TEST_REPORT",
+  "READINESS_REPORT", "RETURN_TO_SPORT_REPORT", "WELLBEING_CHECKIN_REPORT", "CAMERA_WELLBEING_REPORT",
+  "SLEEP_REPORT", "RECOVERY_REPORT", "CONNECTIVITY_REPORT", "NUTRITION_REPORT", "MEDICATION_REPORT",
+  "ANTI_DOPING_REPORT", "SKIN_SCREENING_REPORT", "SAFETY_INCIDENT_REPORT", "WEEKLY_HEALTH_REPORT",
+  "WEEKLY_REHAB_REPORT", "WEEKLY_WELLBEING_REPORT", "WEEKLY_ATHLETE_REPORT", "MONTHLY_HEALTH_REPORT",
+  "MONTHLY_REHAB_REPORT", "MONTHLY_ATHLETE_REPORT", "DOCTOR_ATHLETE_REPORT", "FULL_ATHLETE_REPORT",
+];
+
+function reportDate(value) {
+  if (!value) return "Not available";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime())
+    ? "Not available"
+    : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(parsed);
+}
+
+function reportsPage(state) {
+  const reportsState = state.reporting || {};
+  const active = reportsState.reports || [];
+  const report = reportsState.detail;
+  const status = reportsState.status || {};
+  const unavailable = state.session.demo || !state.healthApiConfigured;
+  const statusLabel = (value) => escapeHtml(String(value || "UNKNOWN").replaceAll("_", " "));
+  const notice = state.session.demo
+    ? `<div class="health-notice" role="status">${icon("info")}<span>Report generation is unavailable for synthetic demo accounts. No demo report data is fabricated.</span></div>`
+    : !state.healthApiConfigured
+      ? `<div class="health-notice" role="status">${icon("info")}<span>Connect the authenticated VitaPulse API to create reports.</span></div>`
+      : reportsState.error
+        ? `<div class="health-notice health-notice-error" role="alert">${icon("info")}<span>${escapeHtml(reportsState.error)}</span></div>`
+        : "";
+  const heading = `<section class="page-intro"><p class="eyebrow">YOUR DATA · YOUR REPORTS</p><h1>Reports</h1><p>Traceable summaries of records you have connected or entered. Reports are not diagnoses or medical clearance.</p></section>`;
+
+  if (report) {
+    const sections = (report.sections || []).map((section) => `
+      <section class="panel report-section"><div class="health-section-title"><div><h2>${escapeHtml(section.title)}</h2></div><span class="health-status">${statusLabel(section.category)}</span></div>
+        ${section.values?.length ? `<ul class="report-value-list">${section.values.map((value) => `<li><strong>${escapeHtml(value.label)}:</strong> ${escapeHtml(value.value)} <small>${escapeHtml((value.source_ids || []).join(", "))}</small></li>`).join("")}</ul>` : `<p>No records in this category.</p>`}</section>`).join("");
+    const ai = report.ai_interpretation;
+    const aiContent = ai ? `<section class="panel report-section"><div class="health-section-title"><div><h2>AI-assisted interpretation</h2><p>Each statement links to its supporting source.</p></div><span class="health-status">${statusLabel(reportsState.status?.aiStatus)}</span></div>
+      <p>${escapeHtml(ai.summary)} <small>${escapeHtml((ai.summary_source_ids || []).join(", "))}</small></p>
+      ${(ai.key_observations || []).map((item) => `<article class="report-ai-item"><strong>Observation</strong><p>${escapeHtml(item.observation)}</p><small>${escapeHtml((item.source_ids || []).join(", "))} · ${statusLabel(item.evidence_strength)}</small></article>`).join("")}
+      ${(ai.recommendations || []).map((item) => `<article class="report-ai-item"><strong>For review</strong><p>${escapeHtml(item.recommendation)}</p><small>${escapeHtml((item.source_ids || []).join(", "))}</small></article>`).join("")}</section>` : "";
+    const longitudinal = (report.longitudinal_insights || []).map((item) => `<li>${escapeHtml(item.statement)} <small>${escapeHtml((item.source_ids || []).join(", "))}</small></li>`).join("");
+    const sources = (report.sources || []).map((source) => `<li><strong>${escapeHtml(source.source_id)}</strong> ${escapeHtml(source.source_label)} · ${escapeHtml(reportDate(source.timestamp))} · ${statusLabel(source.provenance)}</li>`).join("");
+    return `${heading}<button type="button" class="back-link" data-report-action="back">${icon("arrow")} All reports</button>${notice}
+      <section class="panel report-detail"><div class="health-section-title"><div><h2>${escapeHtml(report.title)}</h2><p>Created ${escapeHtml(reportDate(report.generated_at))}</p></div><span class="health-status">${statusLabel(status.status)}</span></div>
+      <p>${escapeHtml(report.factual_summary)}</p><p>Data completeness: <strong>${statusLabel(report.data_completeness)}</strong></p>
+      <div class="report-actions">
+        <button class="secondary-button" type="button" data-report-action="download-pdf" ${status.status !== "COMPLETED" || unavailable ? "disabled" : ""}>Download PDF</button>
+        <button class="secondary-button" type="button" data-report-action="download-html" ${status.status !== "COMPLETED" || unavailable ? "disabled" : ""}>Open HTML</button>
+      </div></section>
+      ${aiContent}<section class="panel report-section"><h2>Longitudinal comparisons</h2>${longitudinal ? `<ul class="report-source-list">${longitudinal}</ul>` : "<p>No comparisons met the minimum-data requirement.</p>"}</section>${sections}
+      <section class="panel report-section"><h2>Data gaps</h2>${(report.data_gaps || []).length ? `<ul>${report.data_gaps.map((gap) => `<li>${escapeHtml(gap)}</li>`).join("")}</ul>` : "<p>No known gaps were detected.</p>"}
+        <h3>Sources</h3><ul class="report-source-list">${sources}</ul>
+        <h3>Limitations</h3><ul>${(report.limitations || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section>
+      <section class="panel report-section"><h2>Email a secure link</h2><p>The link is private and expires. Confirm the recipient before sending.</p>
+        <form class="report-request-form" data-form="report-email"><label class="field"><span>Recipient email</span><input name="recipient" type="email" autocomplete="email" required maxlength="254"></label>
+        <button class="primary-button" type="submit" ${unavailable || reportsState.busy || status.status !== "COMPLETED" ? "disabled" : ""}>${reportsState.busy ? "Sending…" : "Send secure link"}</button></form></section>`;
+  }
+
+  const list = active.length
+    ? `<div class="report-list">${active.map((item) => `<article class="panel report-card"><div class="health-section-title"><div><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.report_type.replaceAll("_", " "))} · ${escapeHtml(reportDate(item.created_at))}</p></div><span class="health-status">${statusLabel(item.status)}</span></div>
+        <p>${escapeHtml(item.summary || "The factual report is being prepared.")}</p><button class="secondary-button" type="button" data-report-action="view" data-report-id="${escapeHtml(item.id)}">View report</button></article>`).join("")}</div>`
+    : `<div class="health-empty"><strong>${reportsState.loading ? "Loading your reports…" : "No reports yet"}</strong><p>Choose a report type to summarize your recorded data. Missing sources are called out rather than filled in.</p></div>`;
+  return `${heading}${notice}
+    <section class="panel report-section"><div class="health-section-title"><div><h2>Create a report</h2><p>Choose a feature report or a weekly/monthly overview.</p></div></div>
+      <form class="report-request-form" data-form="report-request">
+        <label class="field"><span>Report type</span><select name="reportType" required>${reportTypes.map((type) => `<option value="${type}" ${type === "WEEKLY_ATHLETE_REPORT" ? "selected" : ""}>${escapeHtml(type.replaceAll("_", " "))}</option>`).join("")}</select></label>
+        <div class="report-date-grid"><label class="field"><span>From (optional)</span><input type="date" name="dateRangeStart"></label><label class="field"><span>Through (optional)</span><input type="date" name="dateRangeEnd"></label></div>
+        <label class="report-option"><input type="checkbox" name="includeAi" checked> Include source-grounded AI interpretation when available</label>
+        <label class="report-option"><input type="checkbox" name="includePdf" checked> Generate a PDF</label>
+        <button class="primary-button" type="submit" ${unavailable || reportsState.busy ? "disabled" : ""}>${reportsState.busy ? "Queuing…" : "Generate report"} ${icon("arrow")}</button>
+      </form></section>
+    <section class="report-section"><div class="health-section-title"><div><h2>Recent reports</h2><p>Processing status refreshes automatically.</p></div><button class="text-button" type="button" data-report-action="refresh">Refresh ${icon("arrow")}</button></div>${notice}${list}</section>`;
+}
+
 function healthPage(route, state) {
   if (route === "health") return healthOverview(state);
+  if (route === "reports") return reportsPage(state);
   const contentByRoute = {
     "health-reports": ["Medical reports", "Upload private health documents and follow OCR processing.", medicalReportsContent],
     "health-biomarkers": ["Biomarkers", "Review source-linked measurements without turning them into a diagnosis.", biomarkersContent],
@@ -940,8 +1109,90 @@ function healthPage(route, state) {
 function detailPage(state) {
   const detail = state.detail;
   if (!detail) return modulePage(state.lastModule || "health");
-  return `<section class="page-intro"><button class="back-link" type="button" data-action="back">${icon("arrow")} Back</button><p class="eyebrow">VITAPULSE MODULE</p><h1>${escapeHtml(detail)}</h1><p>A dedicated space for this part of your sports-health journey.</p></section>
-    <section class="panel large-empty">${emptyState("Nothing here yet", "This feature is being prepared. When it is available, your information will appear here.", "home")}</section>`;
+  const features = {
+    "Self check-in": {
+      status: "Available",
+      description: "Record your own energy, stress, fatigue, soreness and recovery feeling in the Wellbeing workspace. Entries are self-reported and are not a diagnosis.",
+      route: "wellbeing",
+      action: "Open Wellbeing",
+    },
+    "30-second camera check": {
+      status: "Android only",
+      description: "Camera observations are not available on the web. The native Android app performs an optional, foreground-only face-detection check; it does not identify people or upload raw video.",
+      route: "wellbeing",
+      action: "Review Wellbeing",
+    },
+    Sleep: {
+      status: "Available",
+      description: "Add a sleep entry in Wellbeing or review recent Health Connect records in the Android app. Device records retain their source and timestamps.",
+      route: "wellbeing",
+      action: "Open Wellbeing",
+    },
+    Recovery: {
+      status: "Available with recorded data",
+      description: "Recovery context is derived only from available check-ins, sleep and connected records. VitaPulse does not fabricate a readiness score when data is missing.",
+      route: "wellbeing",
+      action: "Open Wellbeing",
+    },
+    History: {
+      status: "Available with recorded data",
+      description: "Review the account-scoped wellbeing check-ins, sleep entries and summaries you have recorded.",
+      route: "wellbeing",
+      action: "Open Wellbeing",
+    },
+    Trends: {
+      status: "Available when enough records exist",
+      description: "Trend summaries appear only when observations are available. Empty trends mean there is not enough recorded history yet.",
+      route: "wellbeing",
+      action: "Open Wellbeing",
+    },
+    "Wellbeing reports": {
+      status: "Requires saved wellbeing history",
+      description: "Create a weekly summary from your saved records in the Wellbeing workspace. Demo entries are temporary and are not sent to report services.",
+      route: "wellbeing",
+      action: "Open Wellbeing",
+    },
+    "Movement device": {
+      status: "Android device required",
+      description: "The ESP32-001 and MPU6050 live sensor workflow runs in the native Android app. The web experience does not pretend a browser is connected to hardware.",
+      route: "connect",
+      action: "Review Connect",
+    },
+    Smartwatch: {
+      status: "Android Health Connect required",
+      description: "Pair a supported wearable with Health Connect first, then grant VitaPulse only the data-type permissions you choose. NoiseFit data is read through its supported companion-app pathway.",
+      route: "connect",
+      action: "Review Connect",
+    },
+    "Data sync": {
+      status: "Requires an account and connected source",
+      description: "Health-data sync is available in the native Android Connect flow after sign-in and explicit permission. Upload to your account is separately opt-in.",
+      route: "connect",
+      action: "Review Connect",
+    },
+    Permissions: {
+      status: "Requested only when needed",
+      description: "Android system permissions are requested when you start the related feature. You can review or revoke them in Android Settings.",
+      route: "connect",
+      action: "Review Connect",
+    },
+    Diagnostics: {
+      status: "Android device required",
+      description: "Sensor polling rate, response latency and connection diagnostics are collected by the native Android Connect screen while the ESP32 is in use.",
+      route: "connect",
+      action: "Review Connect",
+    },
+  }[detail];
+  const status = features?.status || "Not configured";
+  const description = features?.description || "This destination is not configured in the current web build. No action or data is being simulated.";
+  const destination = features?.route || state.lastModule || "home";
+  const action = features?.action || "Return to the previous section";
+  return `<section class="page-intro"><button class="back-link" type="button" data-action="back">${icon("arrow")} Back</button><p class="eyebrow">VITAPULSE FEATURE</p><h1>${escapeHtml(detail)}</h1><p>Feature availability and the right place to continue.</p></section>
+    <section class="panel health-panel feature-detail-card" aria-labelledby="feature-status-title">
+      <div class="health-section-title"><div><p class="eyebrow">STATUS</p><h2 id="feature-status-title">${escapeHtml(status)}</h2></div>${icon("info")}</div>
+      <p>${escapeHtml(description)}</p>
+      <a class="primary-button" href="#${escapeHtml(destination)}" data-route="${escapeHtml(destination)}">${escapeHtml(action)} ${icon("arrow")}</a>
+    </section>`;
 }
 
 function profilePage(session, state) {
@@ -1152,8 +1403,9 @@ export function renderApp(state) {
   const doctor = state.session.role === "DOCTOR" || state.session.role === "ADMIN";
   const route = state.route;
   let content;
-  if (route === "home") content = homePage(state.session);
+  if (route === "home") content = homePage(state);
   else if (route === "health" || route.startsWith("health-")) content = healthPage(route, state);
+  else if (route === "reports") content = reportsPage(state);
   else if (route === "rehab" || route.startsWith("rehab/")) content = rehabPage(route, state);
   else if (route === "wellbeing") content = wellbeingPage(state);
   else if (modules[route]) content = modulePage(route);
@@ -1161,7 +1413,7 @@ export function renderApp(state) {
   else if (route === "settings") content = settingsPage(state);
   else if (route === "detail") content = detailPage(state);
   else if (doctor && route.startsWith("doctor-")) content = doctorPage(route);
-  else content = homePage(state.session);
+  else content = homePage(state);
 
   const offline = state.offline ? `<div class="offline-banner" role="status">${icon("info")}<span><strong>You're offline.</strong> Some information may be unavailable.</span></div>` : "";
   const roleLabel = doctor ? "Clinical workspace" : "Athlete space";
@@ -1175,7 +1427,7 @@ export function renderApp(state) {
       <button class="account-button" type="button" data-route="profile"><span class="avatar">${escapeHtml(initials(state.session.name))}</span><span><strong>${escapeHtml(state.session.name || "Your profile")}</strong><small>${escapeHtml(state.session.email)}</small></span>${icon("more")}</button></div>
     </aside>
     <main class="main-content">
-      <header class="topbar">${brand()}<div class="breadcrumb"><span>Pages</span><span>/</span><strong>${pageName(route)}</strong></div>
+      <header class="topbar">${brand()}<div class="breadcrumb"><span>Pages</span><span>/</span><strong>${escapeHtml(pageName(route, state.detail))}</strong></div>
         <div class="topbar-actions"><div class="network-label ${state.offline ? "is-offline" : ""}">${state.offline ? "Offline" : "Online"}</div>
           <button class="header-icon" type="button" aria-label="Open settings" data-route="settings">${icon("settings")}</button>
           <button class="header-avatar" type="button" aria-label="Open profile" data-route="profile">${escapeHtml(initials(state.session.name))}</button></div>

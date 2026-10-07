@@ -1,3 +1,4 @@
+import json
 import math
 
 import pytest
@@ -15,9 +16,10 @@ from app.ml.analysis import (
     compare_baseline,
     fatigue_signal,
 )
+from app.ml.cnn import OneDCNNJsonModel
 from app.ml.features import FEATURE_NAMES, FEATURE_SCHEMA_VERSION, extract_features
 from app.ml.forest import RandomForestJsonModel
-from app.ml.training import build_feature_rows, write_feature_rows
+from app.ml.training import build_feature_rows, format_confusion_matrix, train_1d_cnn, write_feature_rows
 from app.schemas.movement import BaselineComparison, MovementIntelligenceInput, SensorQuality
 
 
@@ -127,6 +129,64 @@ def test_random_forest_json_requires_active_versioned_compatible_model() -> None
         RandomForestJsonModel(model, expected_schema=FEATURE_SCHEMA_VERSION)
     with pytest.raises(ValueError, match="schema"):
         RandomForestJsonModel({**model, "status": "ACTIVE"}, expected_schema="movement-features-v2")
+
+
+def test_1d_cnn_model_artifact_is_active_and_predicts_a_known_label(tmp_path) -> None:
+    rows = []
+    labels = ["REST", "REST", "REST", "REST", "SQUAT", "SQUAT", "SQUAT", "SQUAT"]
+    for athlete_index, label in enumerate(labels, start=1):
+        for session_index in range(2):
+            feature_values = [0.0] * len(FEATURE_NAMES)
+            for position, name in enumerate(FEATURE_NAMES):
+                value = 0.2 if "mean" in name else 0.05 if "std" in name else 0.3
+                if label == "SQUAT" and "mean" in name and "ax" in name:
+                    value = 1.2
+                if label == "REST" and "mean" in name and "ax" in name:
+                    value = 0.3
+                feature_values[position] = value
+            rows.append(
+                {
+                    "athlete_id": f"athlete_{athlete_index:04d}",
+                    "session_id": f"athlete_{athlete_index:04d}-session-{session_index}",
+                    "exercise": label,
+                    "sensor_placement": "THIGH",
+                    **{name: value for name, value in zip(FEATURE_NAMES, feature_values)},
+                }
+            )
+    features_path = tmp_path / "movement-features.csv"
+    write_feature_rows(rows, features_path)
+    simulated_rows = [{**row, "dataset_provenance": "SYNTHETIC_SIMULATION"} for row in rows]
+    simulated_features_path = tmp_path / "synthetic-movement-features.csv"
+    write_feature_rows(simulated_rows, simulated_features_path)
+    with pytest.raises(ValueError, match="explicit allow_synthetic"):
+        train_1d_cnn(
+            simulated_features_path,
+            tmp_path / "models",
+            model_version="cnn-synthetic-guard",
+        )
+
+    result = train_1d_cnn(features_path, tmp_path / "models", model_version="cnn-exercise-test")
+    artifact = json.loads((tmp_path / "models" / "cnn-exercise-test.json").read_text(encoding="utf-8"))
+    assert artifact["status"] == "EXPERIMENTAL"
+    model = OneDCNNJsonModel(
+        {**artifact, "status": "ACTIVE"},
+        expected_schema=FEATURE_SCHEMA_VERSION,
+    )
+    prediction = model.predict(
+        [0.3 if "ax_mean" in name else 0.1 for name in FEATURE_NAMES],
+        sampling_rate_hz=10.0,
+        sensor_placement="THIGH",
+        quality_acceptable=True,
+    )
+    assert result["accuracy"] >= 0.0
+    assert artifact["format"] == "vitapulse-1d-cnn-json-v2"
+    assert artifact["architecture"]["type"] == "1d_cnn"
+    assert artifact["architecture"]["classifier"] == "dense_softmax"
+    assert result["dataset_provenance"] == "UNSPECIFIED"
+    assert sum(map(sum, result["confusion_matrix"])) == result["test_sample_count"]
+    assert "actual / predicted" in format_confusion_matrix(result)
+    assert prediction is not None
+    assert prediction.label in {"REST", "SQUAT"}
 
 
 def test_movement_intelligence_requires_model_provenance_without_confidence() -> None:

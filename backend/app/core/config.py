@@ -39,6 +39,16 @@ class Settings(BaseSettings):
         validation_alias="MEDICAL_REPORT_BUCKET",
     )
     health_report_bucket: str = Field(default="reports", validation_alias="HEALTH_REPORT_BUCKET")
+    report_storage_bucket: str = Field(default="reports", validation_alias="REPORT_STORAGE_BUCKET")
+    reports_enabled: bool = Field(default=True, validation_alias="REPORTS_ENABLED")
+    report_signed_url_expiry_seconds: int = Field(
+        default=900,
+        ge=60,
+        le=3600,
+        validation_alias="REPORT_SIGNED_URL_EXPIRY_SECONDS",
+    )
+    report_default_template_version: str = Field(default="v1", validation_alias="REPORT_DEFAULT_TEMPLATE_VERSION")
+    pdf_generation_enabled: bool = Field(default=True, validation_alias="PDF_GENERATION_ENABLED")
     signed_url_expiry_seconds: int = Field(
         default=900,
         ge=60,
@@ -48,6 +58,12 @@ class Settings(BaseSettings):
     skin_screening_enabled: bool = Field(default=False, validation_alias="SKIN_SCREENING_ENABLED")
     gemini_api_key: str = Field(default="", validation_alias="GEMINI_API_KEY")
     gemini_model: str = Field(default="", validation_alias="GEMINI_MODEL")
+    gemini_enabled: bool = Field(default=True, validation_alias="GEMINI_ENABLED")
+    gemini_timeout_seconds: int = Field(default=60, ge=5, le=180, validation_alias="GEMINI_TIMEOUT_SECONDS")
+    gemini_max_retries: int = Field(default=2, ge=0, le=5, validation_alias="GEMINI_MAX_RETRIES")
+    gemini_temperature: float = Field(default=0.2, ge=0.0, le=1.0, validation_alias="GEMINI_TEMPERATURE")
+    ai_provider: Literal["gemini"] = Field(default="gemini", validation_alias="AI_PROVIDER")
+    athlete_intelligence_enabled: bool = Field(default=True, validation_alias="ATHLETE_INTELLIGENCE_ENABLED")
     database_url: str = Field(default="", validation_alias="DATABASE_URL")
     cors_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["http://127.0.0.1:4173", "http://localhost:4173"],
@@ -56,6 +72,7 @@ class Settings(BaseSettings):
     smtp_enabled: bool = Field(default=False, validation_alias="SMTP_ENABLED")
     smtp_host: str = Field(default="", validation_alias="SMTP_HOST")
     smtp_port: int = Field(default=587, validation_alias="SMTP_PORT")
+    smtp_use_tls: bool = Field(default=True, validation_alias="SMTP_USE_TLS")
     smtp_username: str = Field(default="", validation_alias="SMTP_USERNAME")
     smtp_password: str = Field(default="", validation_alias="SMTP_PASSWORD")
     smtp_from_email: str = Field(default="", validation_alias="SMTP_FROM_EMAIL")

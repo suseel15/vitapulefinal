@@ -1,0 +1,6 @@
+VITAPULSE SYNTHETIC IMU DATASET
+Generator seed: 20261007
+These are generated numeric signals, not sensor recordings from athletes.
+Labels are SYNTHETIC_SIMULATION and source is SIMULATION.
+Use only to test software pipelines. Never describe its metrics as real-world,
+clinical, safety, or athlete performance. Do not mix with live sensor data.

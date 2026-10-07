@@ -85,7 +85,10 @@ import java.util.Locale
 import kotlinx.coroutines.delay
 
 @Composable
-fun WellbeingFeatureScreen(modifier: Modifier = Modifier) {
+fun WellbeingFeatureScreen(
+    modifier: Modifier = Modifier,
+    onOpenConnect: () -> Unit = {},
+) {
     val context = LocalContext.current
     val model: WellbeingViewModel = viewModel(
         factory = WellbeingViewModel.create(context.applicationContext as VitaPulseApplication),
@@ -173,17 +176,25 @@ fun WellbeingFeatureScreen(modifier: Modifier = Modifier) {
             }
         }
         when (route) {
-            "wellbeing" -> item {
-                WellbeingHub(
-                    checkIn = state.checkIns.firstOrNull()?.takeIf { isToday(it.createdAtMs) },
-                    latestCamera = state.cameraSessions.firstOrNull(),
-                    latestSleep = state.sleepRecords.firstOrNull(),
-                    latestRecovery = state.recoveryRecords.firstOrNull(),
-                    cameraEnabled = cameraEnabled,
-                    syncState = state.syncState,
-                    onRoute = { route = it },
-                    onSync = model::syncPending,
-                )
+            "wellbeing" -> {
+                item {
+                    app.vitapulse.android.feature.connect.ConnectedHealthContextCard(
+                        title = "Connected recovery data",
+                        onOpenConnect = onOpenConnect,
+                    )
+                }
+                item {
+                    WellbeingHub(
+                        checkIn = state.checkIns.firstOrNull()?.takeIf { isToday(it.createdAtMs) },
+                        latestCamera = state.cameraSessions.firstOrNull(),
+                        latestSleep = state.sleepRecords.firstOrNull(),
+                        latestRecovery = state.recoveryRecords.firstOrNull(),
+                        cameraEnabled = cameraEnabled,
+                        syncState = state.syncState,
+                        onRoute = { route = it },
+                        onSync = model::syncPending,
+                    )
+                }
             }
             "check-in" -> item { CheckInForm(onSave = model::saveCheckIn, onDone = { route = "wellbeing" }) }
             "camera-intro" -> item {

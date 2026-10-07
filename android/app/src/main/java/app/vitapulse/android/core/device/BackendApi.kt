@@ -7,6 +7,7 @@ import retrofit2.http.Header
 import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 data class BackendEnvelope<T>(val success: Boolean, val data: T?, val error: BackendError?)
 data class BackendError(val code: String?, val message: String?)
@@ -132,9 +133,71 @@ data class ExerciseRecord(
     @SerializedName("default_repetitions") val defaultRepetitions: Int?,
 )
 
+data class ReportsListResponse(val reports: List<ReportListItem>)
+data class ReportListItem(
+    val id: String,
+    val title: String,
+    @SerializedName("report_type") val reportType: String,
+    val status: String,
+    val summary: String?,
+    @SerializedName("ai_status") val aiStatus: String?,
+    @SerializedName("email_status") val emailStatus: String?,
+    @SerializedName("created_at") val createdAt: String?,
+)
+data class ReportCreated(
+    @SerializedName("reportId") val reportId: String,
+    val status: String,
+)
+data class ReportDetailsResponse(val report: ReportDetails)
+data class ReportDetails(
+    val title: String,
+    @SerializedName("factual_summary") val factualSummary: String,
+    @SerializedName("data_completeness") val dataCompleteness: String,
+    @SerializedName("data_gaps") val dataGaps: List<String>,
+    val limitations: List<String>,
+    @SerializedName("longitudinal_insights") val longitudinalInsights: List<ReportInsight>,
+)
+data class ReportInsight(
+    val statement: String,
+    @SerializedName("source_ids") val sourceIds: List<String>,
+)
+data class ReportDownload(val url: String)
+
 interface BackendApi {
     @GET("me")
     suspend fun currentProfile(@Header("Authorization") bearer: String): BackendEnvelope<ProfileResponse>
+
+    @GET("reports")
+    suspend fun reports(
+        @Header("Authorization") bearer: String,
+        @Query("limit") limit: Int = 50,
+    ): BackendEnvelope<ReportsListResponse>
+
+    @POST("reports")
+    suspend fun createReport(
+        @Header("Authorization") bearer: String,
+        @Body request: Map<String, Any?>,
+    ): BackendEnvelope<ReportCreated>
+
+    @GET("reports/{reportId}")
+    suspend fun report(
+        @Header("Authorization") bearer: String,
+        @Path("reportId") reportId: String,
+    ): BackendEnvelope<ReportDetailsResponse>
+
+    @GET("reports/{reportId}/download")
+    suspend fun downloadReport(
+        @Header("Authorization") bearer: String,
+        @Path("reportId") reportId: String,
+        @Query("format") format: String = "pdf",
+    ): BackendEnvelope<ReportDownload>
+
+    @POST("reports/{reportId}/email")
+    suspend fun emailReport(
+        @Header("Authorization") bearer: String,
+        @Path("reportId") reportId: String,
+        @Body request: Map<String, String>,
+    ): BackendEnvelope<Map<String, String>>
 
     @GET("rehab/exercises")
     suspend fun exercises(@Header("Authorization") bearer: String): BackendEnvelope<ExerciseListResponse>
@@ -220,6 +283,29 @@ interface BackendApi {
     suspend fun createWellbeingReport(
         @Header("Authorization") bearer: String,
         @Body request: Map<String, Any?>,
+    ): BackendEnvelope<Map<String, Any?>>
+
+    @POST("connect/sync")
+    suspend fun syncHealthConnect(
+        @Header("Authorization") bearer: String,
+        @Body request: Map<String, Any>,
+    ): BackendEnvelope<Map<String, Any?>>
+
+    @POST("connect/permissions")
+    suspend fun saveHealthConnectPermission(
+        @Header("Authorization") bearer: String,
+        @Body request: Map<String, Any?>,
+    ): BackendEnvelope<Map<String, Any?>>
+
+    @POST("connect/devices")
+    suspend fun saveConnectedDevice(
+        @Header("Authorization") bearer: String,
+        @Body request: Map<String, Any?>,
+    ): BackendEnvelope<Map<String, Any?>>
+
+    @retrofit2.http.DELETE("connect/health-data")
+    suspend fun deleteHealthConnectData(
+        @Header("Authorization") bearer: String,
     ): BackendEnvelope<Map<String, Any?>>
 }
 
