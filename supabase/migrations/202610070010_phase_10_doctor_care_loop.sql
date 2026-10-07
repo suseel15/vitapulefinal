@@ -315,7 +315,7 @@ returns table (
   athlete_id uuid,
   display_name text,
   sport text,
-  position text,
+  "position" text,
   rehab_stage text,
   injury_region text,
   relationship_type text,
