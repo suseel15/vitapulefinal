@@ -34,14 +34,6 @@ class HttpPollingMovementDataSource(
         _connectionState.value = MovementConnectionState.CONNECTING
         val candidate = repository.api(network)
         try {
-            val status = candidate.getStatus()
-            if (status.device != "ESP32-001" || status.wifi != true || status.ip != "192.168.4.1") {
-                throw SensorStreamException("ESP32 status did not match the supported device protocol.", MovementConnectionState.DEVICE_UNREACHABLE)
-            }
-            _connectionState.value = MovementConnectionState.DEVICE_REACHABLE
-            if (status.mpu6050 != true) {
-                throw SensorStreamException("ESP32 is reachable, but MPU6050 was not detected.", MovementConnectionState.SENSOR_UNAVAILABLE)
-            }
             val started = SystemClock.elapsedRealtime()
             val firstReading = candidate.getSensorData()
             val sample = validate(firstReading)
@@ -76,6 +68,23 @@ class HttpPollingMovementDataSource(
     }
 
     override suspend fun disconnect() = stop()
+
+    override suspend fun selectExercise(index: Int) {
+        require(index in ESP32_EXERCISES.indices) { "Select one of the supported ESP32 exercises." }
+        val activeApi = api ?: throw SensorStreamException(
+            "Connect and verify the sensor before selecting an exercise.",
+            MovementConnectionState.DISCONNECTED,
+        )
+        activeApi.selectExercise(index).use { }
+    }
+
+    override suspend fun resetExerciseCounter() {
+        val activeApi = api ?: throw SensorStreamException(
+            "Connect and verify the sensor before resetting repetitions.",
+            MovementConnectionState.DISCONNECTED,
+        )
+        activeApi.resetExerciseCounter().use { }
+    }
 
     override fun readings(): Flow<MovementSample> = flow {
         val activeApi = api ?: throw SensorStreamException("Connect and verify the sensor first.", MovementConnectionState.DISCONNECTED)
@@ -155,11 +164,38 @@ class HttpPollingMovementDataSource(
             deviceId = "ESP32-001",
             sensorType = "MPU6050",
             transport = "HTTP",
+            exerciseName = response.exercise?.takeIf { it.isNotBlank() },
+            exerciseRepetitions = response.reps?.also {
+                if (it < 0) {
+                    throw SensorStreamException(
+                        "ESP32 exercise repetitions cannot be negative.",
+                        MovementConnectionState.DEGRADED,
+                    )
+                }
+            },
+            exercisePhase = response.phase?.uppercase()?.also {
+                if (it !in SUPPORTED_EXERCISE_PHASES) {
+                    throw SensorStreamException(
+                        "ESP32 returned an unsupported exercise phase.",
+                        MovementConnectionState.DEGRADED,
+                    )
+                }
+            },
+            exerciseMotion = response.motion?.uppercase()?.also {
+                if (it !in SUPPORTED_EXERCISE_MOTIONS) {
+                    throw SensorStreamException(
+                        "ESP32 returned an unsupported exercise motion state.",
+                        MovementConnectionState.DEGRADED,
+                    )
+                }
+            },
         )
     }
 
     companion object {
         const val MAX_RETRIES = 8
         const val MAX_RETRY_DELAY_MS = 2_000L
+        private val SUPPORTED_EXERCISE_PHASES = setOf("REST", "UP", "DOWN")
+        private val SUPPORTED_EXERCISE_MOTIONS = setOf("IDLE", "ACTIVE")
     }
 }

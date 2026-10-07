@@ -26,13 +26,16 @@ The app requests local Wi-Fi access only after the athlete taps **Connect device
 
 ## Device and session behavior
 
-- Connects to `VitaPulse-ESP32` at `192.168.4.1` and validates `GET /status` and `GET /data` for ESP32-001 and the MPU6050 before reporting `SENSOR_CONNECTED`.
-- Polls over HTTP with a 100 ms requested delay while verifying, calibrating, or recording; the UI reports measured request rate and latency instead of asserting an ideal 10 Hz rate.
+- Connects to `VitaPulse-ESP32` at `192.168.4.1` and validates the MPU6050 axes in `GET /data` before reporting `SENSOR_CONNECTED`; this also supports the uploaded exercise-counter firmware, which does not expose `/status`.
+- When connected outside an active Rehab session, reads the firmware exercise counter while the app is foregrounded. Its picker sends the uploaded sketch's `/exercise?value=0..9` command and its reset button calls `/reset`. The ten supported choices are bicep curl, hammer curl, dumbbell row, wrist curl, reverse wrist curl, lateral raise, front raise, shoulder press, tricep extension, and tricep kickback.
+- Polls over HTTP with a 100 ms requested delay while verifying, monitoring the exercise counter, calibrating, or recording; the UI reports measured request rate and latency instead of asserting an ideal 10 Hz rate.
 - Validates all six finite axis values and conservative numeric bounds. Invalid, failed, timed-out, and stale readings produce visible connection/session errors.
 - Calibrates each session from at least 30 stationary live readings. Sensor placement is recorded with the session and does not imply permanent sensor calibration.
 - Keeps the bounded recent raw-sample window and summaries on-device. Only an authenticated, owner-scoped session summary and request diagnostics are sent to FastAPI/Supabase.
 - Stores completed sessions locally and retries summary sync when the athlete is signed in and the backend is reachable. A client session UUID makes create/retry idempotent.
-- Stops polling on disconnect, session pause, or app background. Simulation is not used as a hardware fallback.
+- Stops exercise-counter polling on disconnect or app background. An active Rehab session owns the sensor stream; on an explicit session pause, counter polling resumes. Simulation is not used as a hardware fallback.
+
+On Android 10–12, joining the ESP32 asks for foreground location permission because Wi-Fi network selection requires it; newer Android versions request the applicable nearby-Wi-Fi or local-network permission. The app does not request unrelated special access or background location.
 
 The live movement, stability, smoothness, and fatigue values are experimental qualitative signals. They are not diagnoses, medical advice, or return-to-sport clearance.
 
@@ -65,9 +68,13 @@ Apply only pending migration `202610060007_phase_6_athlete_wellbeing.sql`, after
 
 ## Phase 7 Connect Hub and Health Connect
 
-Health Connect permissions are requested and tracked separately by data type. Synced records are cached in the local Room database with provider origin, record time, and cache-sync time. The native Health, Rehab, and Wellbeing screens surface only recent sleep (up to 48 hours), same-day steps, and heart-rate summaries (up to 24 hours); they do not calculate a medical readiness or recovery score from these values.
+Health Connect permissions are requested and tracked separately by data type, with an optional consent flow to request all five supported read scopes together. Health Connect availability, client, and granted scopes are refreshed when returning from Android system settings. The app does not request write access. Synced records are cached in the local Room database with provider origin, record time, and cache-sync time. The native Health, Rehab, and Wellbeing screens surface only recent sleep (up to 48 hours), same-day steps, and heart-rate summaries (up to 24 hours); they do not calculate a medical readiness or recovery score from these values.
 
 Account upload is a separate, default-off preference. When enabled, WorkManager performs bounded incremental synchronization and retries only when network access is available. Raw heart-rate samples remain local; the backend receives an average and sample count. Local cache deletion and account-data deletion are distinct actions. NoiseFit Mettle is supported through its official companion-app/Health Connect workflow; VitaPulse does not reverse-engineer a proprietary Bluetooth protocol.
+
+## Phase 9 Reports
+
+The native Reports tab supports authenticated weekly-report creation, status and source-linked details, expiring secure PDF links, and explicit-recipient email delivery. It requires the Phase 9 reports migration (`202610060009_phase_9_reports_intelligence.sql`) to be applied to the Supabase project and the reports/PDF server settings to be enabled. The app reports unavailable backend functionality instead of fabricating results.
 
 The authenticated API exposes `/api/v1/connect/status`, `/api/v1/connect/devices`, `/api/v1/connect/permissions`, `/api/v1/connect/sync`, `/api/v1/connect/sync/history`, `/api/v1/connect/health-data`, and normalized `/api/v1/health-data/{sleep,heart-rate,activity,exercise,spo2}` reads. Apply only pending migration `202610060008_phase_7_connect_health_data.sql`, after migration 007 and in filename order. Review its owner-scoped RLS against the target Supabase project before applying; hosted application has not been confirmed.
 
@@ -81,4 +88,4 @@ Authenticated endpoints include `GET/POST /api/v1/devices`, `GET/PATCH /api/v1/d
 
 ## Verification status
 
-The Android unit suite, web tests/build, and backend tests have passed locally. The APK has not been packaged pending the separate user-requested APK task. The physical camera workflow, reminder permission behavior, Health Connect provider/device behavior, ESP32 + MPU6050 phone run, actual Wi-Fi join behavior, measured hardware request rate/latency, clinical review, and live Supabase migration have not been performed and must not be represented as verified.
+The Android unit suite and release APK build pass locally; a device-test APK can be signed with the local debug key, but it is not a Play Store release signature. The physical camera workflow, Health Connect provider/device behavior, ESP32 + MPU6050 phone run, actual Wi-Fi join behavior, measured hardware request rate/latency, clinical review, and live Supabase migrations have not been verified and must not be represented as complete.

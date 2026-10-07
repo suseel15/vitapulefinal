@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.StateFlow
 interface MovementDataSource {
     suspend fun connect(network: Network)
     suspend fun disconnect()
+    suspend fun selectExercise(index: Int)
+    suspend fun resetExerciseCounter()
     fun readings(): Flow<MovementSample>
     val connectionState: StateFlow<MovementConnectionState>
 }

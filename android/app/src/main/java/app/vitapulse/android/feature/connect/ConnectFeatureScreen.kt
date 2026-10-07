@@ -1,6 +1,7 @@
 package app.vitapulse.android.feature.connect
 
 import android.content.Intent
+import android.content.ActivityNotFoundException
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
@@ -72,6 +73,7 @@ import app.vitapulse.android.core.healthconnect.deduplicationKey
 import app.vitapulse.android.core.healthconnect.isValid
 import com.google.gson.JsonParser
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import retrofit2.HttpException
 import java.io.IOException
 import java.time.Instant
@@ -89,13 +91,15 @@ fun ConnectFeatureScreen(
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as VitaPulseApplication
-    val client = app.healthConnectClient
-    val permissionManager = remember(client) { client?.let(::HealthConnectPermissionManager) }
-    val availability = remember { app.healthConnectManager.availability() }
+    var healthConnectClient by remember { mutableStateOf(app.healthConnectClient) }
+    val permissionManager = remember(healthConnectClient) {
+        healthConnectClient?.let(::HealthConnectPermissionManager)
+    }
+    var availability by remember { mutableStateOf(app.healthConnectManager.availability()) }
     val allTypes = remember { HealthDataType.entries.toSet() }
     var grantedPermissions by remember { mutableStateOf(emptySet<String>()) }
     var route by remember(initialRoute) { mutableStateOf(initialRoute) }
-    var selectedPermissionType by remember { mutableStateOf<HealthDataType?>(null) }
+    var selectedPermissionTypes by remember { mutableStateOf<Set<HealthDataType>>(emptySet()) }
     var showDataDisclosure by remember { mutableStateOf(false) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var showRemoteDeleteConfirmation by remember { mutableStateOf(false) }
@@ -113,16 +117,16 @@ fun ConnectFeatureScreen(
     val pendingUploads by dao.observePendingBackendCount().collectAsState(initial = 0)
     var lastReportedMovementState by remember { mutableStateOf<MovementConnectionState?>(null) }
 
-    suspend fun refreshPermissions() {
-        val current = permissionManager?.grantedPermissions() ?: emptySet()
+    suspend fun refreshPermissions(manager: HealthConnectPermissionManager? = permissionManager) {
+        val current = manager?.grantedPermissions() ?: emptySet()
         grantedPermissions = current
         if (persistedPermissions != current) {
             persistedPermissions = current
-            if (healthDataSyncEnabled && permissionManager != null) {
+            if (healthDataSyncEnabled && manager != null) {
                 try {
                     val checkedAt = Instant.now().toString()
                     allTypes.forEach { type ->
-                        val isGranted = permissionManager.requiredPermissions(setOf(type)).all { it in current }
+                        val isGranted = manager.requiredPermissions(setOf(type)).all { it in current }
                         app.backendClient.saveHealthConnectPermission(
                             type.name,
                             if (isGranted) "GRANTED" else "DENIED",
@@ -149,7 +153,13 @@ fun ConnectFeatureScreen(
 
     DisposableEffect(lifecycleOwner, permissionManager) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) scope.launch { refreshPermissions() }
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val client = app.refreshHealthConnectClient()
+                healthConnectClient = client
+                availability = app.healthConnectManager.availability()
+                val refreshedManager = client?.let(::HealthConnectPermissionManager)
+                scope.launch { refreshPermissions(refreshedManager) }
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -192,8 +202,8 @@ fun ConnectFeatureScreen(
         }
     }
 
-    fun startContextualPermissionRequest(type: HealthDataType) {
-        selectedPermissionType = type
+    fun startContextualPermissionRequest(types: Set<HealthDataType>) {
+        selectedPermissionTypes = types
         showDataDisclosure = true
     }
 
@@ -305,12 +315,29 @@ fun ConnectFeatureScreen(
                 availability = availability,
                 grantedPermissions = grantedPermissions,
                 permissionManager = permissionManager,
-                onRequest = ::startContextualPermissionRequest,
+                onRequest = { type -> startContextualPermissionRequest(setOf(type)) },
+                onRequestAll = { startContextualPermissionRequest(allTypes) },
                 onManage = {
                     runCatching {
                         context.startActivity(Intent("androidx.health.ACTION_HEALTH_CONNECT_SETTINGS"))
-                    }.onFailure {
-                        context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
+                    }.onFailure { error ->
+                        val providerPackage = if (android.os.Build.VERSION.SDK_INT >= 34) {
+                            "com.google.android.healthconnect.controller"
+                        } else {
+                            "com.google.android.apps.healthdata"
+                        }
+                        try {
+                            context.startActivity(
+                                Intent(
+                                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    Uri.parse("package:$providerPackage"),
+                                ),
+                            )
+                        } catch (settingsError: ActivityNotFoundException) {
+                            syncError = "Health Connect settings could not be opened: ${settingsError.message ?: error.message}"
+                        } catch (settingsError: SecurityException) {
+                            syncError = "Health Connect settings are unavailable: ${settingsError.message}"
+                        }
                     }
                 },
             )
@@ -405,27 +432,35 @@ fun ConnectFeatureScreen(
     }
 
     if (showDataDisclosure) {
-        val type = selectedPermissionType
+        val types = selectedPermissionTypes
+        val labels = types.sortedBy { it.ordinal }.joinToString { it.label }
         AlertDialog(
             onDismissRequest = { showDataDisclosure = false },
-            title = { Text("Health Data Access") },
+            title = { Text(if (types.size > 1) "Connect supported health data" else "Health Data Access") },
             text = {
                 Text(
-                    "${type?.label ?: "Selected health data"} can support VitaPulse recovery, activity, and wellbeing features. " +
-                        "VitaPulse reads only the selected data type, keeps the source and timestamps, and lets you revoke access in Health Connect. " +
-                        "The initial import is bounded to ${type?.historyDays ?: 30} days.",
+                    "VitaPulse will request read access to $labels. Data can support recovery, activity, and wellbeing features. " +
+                        "The Health Connect system screen lets you approve or decline each permission, and you can revoke access at any time. " +
+                        "VitaPulse does not request write access.",
                 )
             },
             confirmButton = {
                 TextButton(
-                    enabled = type != null && permissionManager != null,
+                    enabled = types.isNotEmpty() && permissionManager != null,
                     onClick = {
-                        val selected = type ?: return@TextButton
+                        if (types.isEmpty()) return@TextButton
                         val manager = permissionManager ?: return@TextButton
                         scope.launch {
-                            val missing = manager.missingPermissions(setOf(selected))
-                            showDataDisclosure = false
-                            if (missing.isNotEmpty()) permissionLauncher.launch(missing)
+                            try {
+                                val missing = manager.missingPermissions(types)
+                                showDataDisclosure = false
+                                if (missing.isNotEmpty()) permissionLauncher.launch(missing)
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: Exception) {
+                                showDataDisclosure = false
+                                syncError = "Health Connect could not open the permission request: ${error.message ?: error.javaClass.simpleName}"
+                            }
                         }
                     },
                 ) { Text("Continue") }
@@ -675,6 +710,7 @@ private fun HealthPermissionsScreen(
     grantedPermissions: Set<String>,
     permissionManager: HealthConnectPermissionManager?,
     onRequest: (HealthDataType) -> Unit,
+    onRequestAll: () -> Unit,
     onManage: () -> Unit,
 ) {
     LazyColumn(modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -685,6 +721,14 @@ private fun HealthPermissionsScreen(
             )
         }
         item { Text("Status: ${availability.name.replace('_', ' ')}") }
+        item {
+            Button(
+                onClick = onRequestAll,
+                enabled = availability == HealthConnectAvailability.AVAILABLE && permissionManager != null,
+            ) {
+                Text("Connect all supported data")
+            }
+        }
         items(HealthDataType.entries.toList()) { type ->
             val granted = permissionManager?.let { permissionGranted(it, grantedPermissions, type) } == true
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -694,7 +738,7 @@ private fun HealthPermissionsScreen(
                 }
             }
         }
-        item { Button(onClick = onManage, enabled = availability == HealthConnectAvailability.AVAILABLE) { Text("Manage Permissions") } }
+        item { Button(onClick = onManage) { Text("Open Health Connect settings") } }
     }
 }
 

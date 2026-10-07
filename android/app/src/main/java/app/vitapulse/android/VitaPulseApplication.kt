@@ -68,18 +68,24 @@ class VitaPulseApplication : Application() {
             "vitapulse-health-data.db",
         ).build()
         healthConnectManager = HealthConnectManager(this)
-        healthConnectClient = healthConnectManager.clientOrNull()
-        healthConnectClient?.let { client ->
-            healthSyncRepository = HealthConnectSyncRepository(
-                healthDataDatabase,
-                HealthConnectPermissionManager(client),
-                HealthDataProvider { type, start, end -> HealthConnectReader(client).read(type, start, end) },
-            )
-        }
+        refreshHealthConnectClient()
         backendClient = BackendClient(this)
         if (backendClient.isHealthDataSyncEnabled()) {
             HealthConnectSyncWorker.schedulePeriodic(this)
         }
         modelManager = ModelManager(this)
+    }
+
+    fun refreshHealthConnectClient(): HealthConnectClient? {
+        val client = healthConnectManager.clientOrNull()
+        healthConnectClient = client
+        healthSyncRepository = client?.let {
+            HealthConnectSyncRepository(
+                healthDataDatabase,
+                HealthConnectPermissionManager(it),
+                HealthDataProvider { type, start, end -> HealthConnectReader(it).read(type, start, end) },
+            )
+        }
+        return client
     }
 }

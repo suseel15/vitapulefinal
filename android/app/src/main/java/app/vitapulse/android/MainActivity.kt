@@ -52,6 +52,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,6 +72,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.vitapulse.android.core.device.ExerciseRecord
+import app.vitapulse.android.core.device.ESP32_EXERCISES
 import app.vitapulse.android.core.device.MovementConnectionState
 import app.vitapulse.android.core.device.MovementSample
 import app.vitapulse.android.feature.device.MovementDeviceViewModel
@@ -114,7 +116,11 @@ private fun VitaPulseRoot(deviceViewModel: MovementDeviceViewModel = viewModel()
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) deviceViewModel.pauseForBackground()
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> deviceViewModel.resumeExerciseCounter()
+                Lifecycle.Event.ON_STOP -> deviceViewModel.pauseForBackground()
+                else -> Unit
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -144,7 +150,7 @@ private fun VitaPulseRoot(deviceViewModel: MovementDeviceViewModel = viewModel()
                     title = {
                         Column {
                             Text("vitapulse", style = MaterialTheme.typography.titleLarge)
-                            Text("ATHLETE WELLBEING · PHASE 9", style = MaterialTheme.typography.labelSmall)
+                            Text("SPORTS HEALTH · ANDROID", style = MaterialTheme.typography.labelSmall)
                         }
                     },
                 )
@@ -248,6 +254,8 @@ private fun VitaPulseRoot(deviceViewModel: MovementDeviceViewModel = viewModel()
                             onRegister = deviceViewModel::registerDevice,
                             onDiagnostics = { showDiagnostics = !showDiagnostics },
                             onSignIn = { showSignIn = true },
+                            onSelectExercise = deviceViewModel::selectExercise,
+                            onResetExerciseCounter = deviceViewModel::resetExerciseCounter,
                         )
                     }
                 }
@@ -413,7 +421,21 @@ private fun DeviceScreen(
     onRegister: () -> Unit,
     onDiagnostics: () -> Unit,
     onSignIn: () -> Unit,
+    onSelectExercise: (Int) -> Unit,
+    onResetExerciseCounter: () -> Unit,
 ) {
+    var exerciseMenuExpanded by remember { mutableStateOf(false) }
+    var selectedExerciseIndex by remember { mutableStateOf(0) }
+    var userSelectedExercise by remember { mutableStateOf(false) }
+    val reportedExerciseName = state.lastSample?.exerciseName
+    LaunchedEffect(reportedExerciseName, userSelectedExercise) {
+        if (!userSelectedExercise && reportedExerciseName != null) {
+            ESP32_EXERCISES.firstOrNull { it.name.equals(reportedExerciseName, ignoreCase = true) }
+                ?.let { selectedExerciseIndex = it.index }
+        }
+    }
+    val exerciseControlsEnabled = !state.busy &&
+        state.session?.status !in setOf("CALIBRATING", "ACTIVE")
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Column {
             Text("Movement device", style = MaterialTheme.typography.headlineMedium)
@@ -448,6 +470,59 @@ private fun DeviceScreen(
         }
         if (state.connectionState == MovementConnectionState.SENSOR_CONNECTED) {
             state.lastSample?.let { SensorReadout(it, title = "LIVE SENSOR") }
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Body exercise counter", style = MaterialTheme.typography.titleLarge)
+                    Text("Choose an exercise supported by the uploaded ESP32 + MPU6050 firmware.")
+                    Box {
+                        OutlinedButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = exerciseControlsEnabled,
+                            onClick = { exerciseMenuExpanded = true },
+                        ) {
+                            Text(ESP32_EXERCISES[selectedExerciseIndex].name)
+                        }
+                        DropdownMenu(
+                            expanded = exerciseMenuExpanded,
+                            onDismissRequest = { exerciseMenuExpanded = false },
+                        ) {
+                            ESP32_EXERCISES.forEach { exercise ->
+                                DropdownMenuItem(
+                                    text = { Text(exercise.name) },
+                                    onClick = {
+                                        selectedExerciseIndex = exercise.index
+                                        userSelectedExercise = true
+                                        exerciseMenuExpanded = false
+                                        onSelectExercise(exercise.index)
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    val sample = state.lastSample
+                    if (sample?.exerciseRepetitions != null) {
+                        Text(
+                            "${sample.exerciseRepetitions}",
+                            style = MaterialTheme.typography.displayMedium,
+                            color = Color(0xFF237A6B),
+                        )
+                        Text("REPETITIONS")
+                        Text("Phase  ${sample.exercisePhase ?: "—"} · Motion  ${sample.exerciseMotion ?: "—"}")
+                        sample.exerciseName?.let { Text("Firmware exercise  $it") }
+                    } else {
+                        Text("Waiting for exercise-counter data from the ESP32 firmware.")
+                    }
+                    OutlinedButton(
+                        onClick = onResetExerciseCounter,
+                        enabled = exerciseControlsEnabled,
+                    ) {
+                        Text("Reset repetitions")
+                    }
+                    if (!exerciseControlsEnabled) {
+                        Text("Finish or pause the active Rehab session before changing the ESP32 exercise.")
+                    }
+                }
+            }
             if (state.signedIn && state.registeredDeviceId == null) {
                 Button(onClick = onRegister, enabled = !state.busy) { Text("Register device to account") }
             } else if (!state.signedIn) {

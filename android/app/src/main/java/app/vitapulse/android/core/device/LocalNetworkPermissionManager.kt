@@ -20,6 +20,11 @@ class LocalNetworkPermissionManager(private val context: Context) {
     }
 
     fun permissionToRequest(): String? {
+        if (Build.VERSION.SDK_INT in Build.VERSION_CODES.Q..Build.VERSION_CODES.S_V2) {
+            return Manifest.permission.ACCESS_FINE_LOCATION.takeIf {
+                ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+            }
+        }
         if (Build.VERSION.SDK_INT >= 37) {
             return localNetworkPermission.takeIf {
                 ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED

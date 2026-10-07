@@ -18,6 +18,7 @@ import java.time.Instant
 import android.net.Uri
 import kotlin.math.sqrt
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,6 +30,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.cancelAndJoin
 
 data class LiveSessionUi(
     val id: String,
@@ -80,6 +82,7 @@ class MovementDeviceViewModel(application: Application) : AndroidViewModel(appli
     val state = _state.asStateFlow()
     private var sampleBuffer = mutableListOf<MovementSampleEntity>()
     private var pollingJob: kotlinx.coroutines.Job? = null
+    private var exerciseCounterJob: Job? = null
     private var calibrationJob: kotlinx.coroutines.Job? = null
     private val syncMutex = Mutex()
     private val diagnostics get() = app.movementDataSource.diagnostics(_state.value.internetAvailable)
@@ -155,9 +158,17 @@ class MovementDeviceViewModel(application: Application) : AndroidViewModel(appli
                     error("Grant the requested local Wi-Fi permission before connecting.")
                 }
                 app.networkManager.requestEsp32Network(passphrase = passphrase)
-                val network = withTimeout(NETWORK_TIMEOUT_MS) {
-                    app.networkManager.network.first { it != null }
-                } ?: error("Android did not provide the ESP32 Wi-Fi network.")
+                val requestState = withTimeout(NETWORK_TIMEOUT_MS) {
+                    app.networkManager.connectionState.first {
+                        it == MovementConnectionState.WIFI_CONNECTION_FAILED ||
+                            app.networkManager.network.value != null
+                    }
+                }
+                if (requestState == MovementConnectionState.WIFI_CONNECTION_FAILED) {
+                    error("Android did not join VitaPulse-ESP32. Approve the Wi-Fi connection request and check the ESP32 password.")
+                }
+                val network = app.networkManager.network.value
+                    ?: error("Android did not provide the ESP32 Wi-Fi network.")
                 verifyDevice(network)
                 _state.value = _state.value.copy(error = null)
             } catch (error: CancellationException) {
@@ -184,7 +195,43 @@ class MovementDeviceViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    suspend fun verifyDevice(network: Network) {
+    fun selectExercise(index: Int) {
+        viewModelScope.launch {
+            updateBusy(true)
+            try {
+                app.movementDataSource.selectExercise(index)
+                _state.value = _state.value.copy(
+                    error = null,
+                    notice = "ESP32 exercise set to ${ESP32_EXERCISES[index].name}.",
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                setError(error)
+            } finally {
+                updateBusy(false)
+            }
+        }
+    }
+
+    fun resetExerciseCounter() {
+        viewModelScope.launch {
+            updateBusy(true)
+            try {
+                app.movementDataSource.resetExerciseCounter()
+                _state.value = _state.value.copy(error = null, notice = "ESP32 repetition counter reset.")
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                setError(error)
+            } finally {
+                updateBusy(false)
+            }
+        }
+    }
+
+    suspend fun verifyDevice(network: Network, monitorExerciseCounter: Boolean = true) {
+        exerciseCounterJob?.cancelAndJoin()
         app.movementDataSource.connect(network)
         val firstSample = app.movementDataSource.readings().first()
         _state.value = _state.value.copy(
@@ -193,6 +240,7 @@ class MovementDeviceViewModel(application: Application) : AndroidViewModel(appli
             diagnostics = diagnostics,
         )
         app.networkManager.markState(MovementConnectionState.SENSOR_CONNECTED)
+        if (monitorExerciseCounter) startExerciseCounterPolling()
     }
 
     fun testConnection() {
@@ -225,6 +273,8 @@ class MovementDeviceViewModel(application: Application) : AndroidViewModel(appli
 
     fun disconnectDevice() {
         viewModelScope.launch {
+            exerciseCounterJob?.cancelAndJoin()
+            exerciseCounterJob = null
             pauseForLifecycle("Sensor disconnected by athlete.")
             app.movementDataSource.disconnect()
             app.networkManager.releaseRequest(manual = true)
@@ -265,6 +315,8 @@ class MovementDeviceViewModel(application: Application) : AndroidViewModel(appli
 
     fun beginLiveSession(exercise: ExerciseRecord, placement: String) {
         calibrationJob = viewModelScope.launch {
+            exerciseCounterJob?.cancelAndJoin()
+            exerciseCounterJob = null
             if (_state.value.connectionState != MovementConnectionState.SENSOR_CONNECTED) {
                 setError(IllegalStateException("Verify the ESP32 and MPU6050 before starting calibration."))
                 return@launch
@@ -587,12 +639,51 @@ class MovementDeviceViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
+    private fun startExerciseCounterPolling() {
+        if (_state.value.connectionState != MovementConnectionState.SENSOR_CONNECTED ||
+            _state.value.session?.status in setOf("CALIBRATING", "ACTIVE")
+        ) {
+            return
+        }
+        if (exerciseCounterJob?.isActive == true) return
+        exerciseCounterJob = viewModelScope.launch {
+            try {
+                app.movementDataSource.readings().collect { sample ->
+                    _state.value = _state.value.copy(
+                        lastSample = sample,
+                        graphSamples = (_state.value.graphSamples + sample).takeLast(GRAPH_SAMPLE_LIMIT),
+                        diagnostics = diagnostics,
+                    )
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                val connectionState = app.movementDataSource.connectionState.value
+                app.networkManager.markState(connectionState)
+                _state.value = _state.value.copy(
+                    connectionState = connectionState,
+                    lastSample = null,
+                    diagnostics = diagnostics,
+                )
+                setError(error)
+            }
+        }
+    }
+
     fun pauseSession() {
         viewModelScope.launch { pauseSession("Session paused by athlete.") }
     }
 
     fun pauseForBackground() {
-        viewModelScope.launch { pauseForLifecycle("App moved to background; live sensor polling paused.") }
+        viewModelScope.launch {
+            exerciseCounterJob?.cancelAndJoin()
+            exerciseCounterJob = null
+            pauseForLifecycle("App moved to background; live sensor polling paused.")
+        }
+    }
+
+    fun resumeExerciseCounter() {
+        startExerciseCounterPolling()
     }
 
     private suspend fun pauseForLifecycle(reason: String) {
@@ -650,6 +741,7 @@ class MovementDeviceViewModel(application: Application) : AndroidViewModel(appli
             _state.value.session,
             if (backendError == null) current.syncState else "SYNC_PENDING",
         )
+        if (reason == "Session paused by athlete.") startExerciseCounterPolling()
     }
 
     fun resumeSession() {
@@ -658,7 +750,7 @@ class MovementDeviceViewModel(application: Application) : AndroidViewModel(appli
         viewModelScope.launch {
             try {
                 val network = app.networkManager.network.value ?: error("Reconnect to the ESP32 before resuming.")
-                verifyDevice(network)
+                verifyDevice(network, monitorExerciseCounter = false)
                 session.backendId?.let { app.backendClient.transitionSession(it, "ACTIVE") }
                 val resumed = session.copy(status = "ACTIVE", error = null)
                 _state.value = _state.value.copy(session = resumed, error = null)
@@ -695,6 +787,7 @@ class MovementDeviceViewModel(application: Application) : AndroidViewModel(appli
             )
             if (completedForUi != completed) persistSession(completedForUi, syncState, diagnostics)
             _state.value = _state.value.copy(session = completedForUi)
+            startExerciseCounterPolling()
             if (canSync) {
                 syncCompletedRecord(toEntity(completedForUi, syncState, diagnostics))
             }
@@ -1024,6 +1117,7 @@ class MovementDeviceViewModel(application: Application) : AndroidViewModel(appli
     override fun onCleared() {
         calibrationJob?.cancel()
         pollingJob?.cancel()
+        exerciseCounterJob?.cancel()
         app.movementDataSource.stop()
         app.networkManager.releaseRequest(manual = true)
         super.onCleared()
