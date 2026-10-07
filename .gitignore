@@ -5,6 +5,8 @@
 .gradle/
 **/.kotlin/
 **/build/
+MPU6050 Gyroscope Data for Posture Tracking and Analysis/
+Sensor-Based Dataset for Knee Joint Mobility and R/
 .idea/
 .venv/
 __pycache__/

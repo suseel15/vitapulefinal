@@ -111,6 +111,31 @@ python -m scripts.evaluate_exercise_model --evaluation build\models\cnn-exercise
 
 Training prints a confusion matrix with actual classes as rows and predicted classes as columns, plus the subject-independent holdout accuracy and evaluation-file path. It writes metrics to `build/models/cnn-exercise-v2.evaluation.json`. The CNN trains a convolution/ReLU/global-max-pooling/dense-softmax classifier over the versioned movement feature vector; the artifact remains `EXPERIMENTAL`.
 
+### Train on the supplied knee-mobility dataset
+
+The separate knee-mobility trainer consumes the user's `Walking_Data.csv` and `Climbing_Data.csv`. It treats each row's source-provided `Bad`, `Healthy`, or `Moderate` label as the target and each row as a 120-step sequence with 12 values per step. It ignores names, age, gender, BMI, and the separate augmented/activity-classification CSVs. The participant identifier is used only in memory to keep the same participant out of both sides of the split.
+
+From `backend/`, install the optional training dependencies if needed, then run:
+
+```powershell
+python -m pip install -e ".[ml-training]"
+python -m scripts.train_knee_mobility --dataset "..\Sensor-Based Dataset for Knee Joint Mobility and R" --output-dir build\knee-mobility
+```
+
+The script prints the participant-independent holdout confusion matrix and writes an experimental model plus evaluation JSON under the ignored `backend/build/knee-mobility/` folder. It explicitly reports malformed activity rows excluded from training. The provided set includes malformed readings and some participants whose labels differ between the two activity files; the evaluation report preserves these counts. Review the original source and label definitions before any clinical or deployment use.
+
+Latest run on the files in this workspace (seed 17): 200 training samples from 112 participants and 70 test samples from 38 participants. Thirty malformed Walking rows were excluded, and six participants had conflicting labels across the remaining activity rows. Holdout accuracy was 0.343 versus a 0.357 majority-class baseline; the model did not outperform that simple baseline.
+
+| Actual \ Predicted | Bad | Healthy | Moderate |
+|---|---:|---:|---:|
+| Bad | 7 | 10 | 8 |
+| Healthy | 8 | 6 | 10 |
+| Moderate | 7 | 3 | 11 |
+
+The model artifact is specific to this 120-by-12 dataset and is not compatible with the existing exercise-recognition API or Android inference path. It does not enable `ML_ENABLED` and is not evidence of clinical validity. Do not commit or upload the source datasets, which include personal data.
+
+The separate gyro-angle CSV has no ground-truth labels, so it is not used to train or evaluate a classifier. Do not infer posture categories from its angles.
+
 ### Run a synthetic end-to-end prototype
 
 To verify the generator, feature extraction, subject-independent split, CNN training, and matrix output without pretending the project has collected field data, run this separate pipeline:
@@ -138,7 +163,7 @@ For the generated seed `20261007`, the subject-independent test used 60 windows 
 
 This run reported `0.950` accuracy on generated data only. It is a pipeline smoke-test result, not evidence of athlete movement recognition.
 
-**Real-data evaluation status:** no real-data confusion matrix is available. The repository's three real movement CSVs contain only their headers (no metadata rows, sensor samples, or labels), and there is no validated real-data model artifact. Do not present synthetic metrics as athlete performance. Collect consented, pseudonymous, manually or clinician-reviewed live sensor data before making real performance claims.
+**Movement model status:** the existing live exercise-recognition pipeline still has no reviewed real sensor training rows in its repository dataset and no validated production model. The separate supplied knee-mobility evaluation is experimental, uses a distinct target/schema, and must not be represented as athlete exercise recognition or clinical performance.
 
 Training does not register or activate a model. The CNN path is currently Python training/evaluation only; the Android local model loader supports the JSON random-forest format, not this CNN artifact. Activation, backend registry integration, and Android CNN inference remain separate work and require held-out real-device validation. Do not flip ML flags to hide these prerequisites.
 
